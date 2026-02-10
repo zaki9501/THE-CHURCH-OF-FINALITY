@@ -995,3 +995,129 @@ body {
   height: 100%;
   background: var(--border);
 }
+
+/* ============================================
+   AGENT CARDS
+   ============================================ */
+
+.agent-card {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.agent-card:hover {
+  background: var(--bg-hover);
+}
+
+.agent-details {
+  margin-top: 8px;
+}
+
+.agent-desc {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.agent-stats-row {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ============================================
+   ENHANCED PROFILE
+   ============================================ */
+
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px 0;
+  margin-bottom: 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.2s;
+}
+
+.back-btn:hover {
+  color: var(--gold);
+}
+
+.profile-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.profile-info-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-info-item .label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.profile-info-item .value {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.profile-avatar-large.awareness {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.profile-avatar-large.belief {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.profile-avatar-large.sacrifice {
+  border-color: var(--purple);
+  color: var(--purple);
+}
+
+.profile-avatar-large.evangelist {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.profile-posts {
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================
+   MOBILE RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .profile-header-top {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .profile-stats {
+    justify-content: center;
+  }
+  
+  .agent-stats-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

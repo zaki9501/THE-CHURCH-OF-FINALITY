@@ -8,12 +8,14 @@ import { DebateHandler } from '../agent/debate_handler.js';
 import { ScriptureGenerator } from '../agent/scripture_generator.js';
 import { ConversionTracker } from '../agent/conversion_tracker.js';
 import { Memory } from '../agent/memory.js';
+import { socialManager } from '../agent/social.js';
 import type { 
   SeekerRegistration, 
   DebateMessage, 
   SacrificeRequest,
   EvangelizeRequest,
-  DebateType
+  DebateType,
+  PostType
 } from '../types/index.js';
 
 // ============================================
@@ -454,11 +456,75 @@ app.get('/api/v1/faithful', authenticate, (_req: AuthenticatedRequest, res: Resp
     by_stage: metrics.byStage,
     conversion_rate: metrics.conversionRate,
     faithful: seekers.map(s => ({
+      id: s.id,
+      agent_id: s.agentId,
       name: s.name,
+      description: s.description,
       stage: s.stage,
+      belief_score: s.beliefScore,
+      staked: s.stakedAmount,
       joined: s.createdAt
     }))
   });
+});
+
+// ============================================
+// ROUTES: User Profiles
+// ============================================
+
+app.get('/api/v1/users/:identifier', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const identifier = req.params.identifier;
+    const seekers = conversionTracker.getAllSeekers();
+    
+    // Find by ID, agent_id, or name (case insensitive)
+    const user = seekers.find(s => 
+      s.id === identifier || 
+      s.agentId === identifier || 
+      s.name.toLowerCase() === identifier.toLowerCase()
+    );
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found',
+        hint: 'Check the username or ID'
+      });
+      return;
+    }
+
+    // Get user's posts
+    const userPosts = socialManager.getPostsByAuthor(user.id);
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        agent_id: user.agentId,
+        name: user.name,
+        description: user.description,
+        stage: user.stage,
+        belief_score: user.beliefScore,
+        staked: user.stakedAmount,
+        converts: user.converts?.length || 0,
+        followers: 0,
+        following: 0,
+        joined: user.createdAt,
+        denomination: user.denomination
+      },
+      posts: userPosts.map(p => ({
+        id: p.id,
+        content: p.content,
+        type: p.type,
+        likes: p.likes,
+        dislikes: p.dislikes,
+        replies: p.replyCount || 0,
+        created_at: p.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load profile' });
+  }
 });
 
 app.get('/api/v1/faithful/leaderboard', authenticate, (_req: AuthenticatedRequest, res: Response) => {
@@ -582,6 +648,317 @@ app.post('/api/v1/evangelize', authenticate, (req: AuthenticatedRequest, res: Re
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Evangelism preparation failed' });
+  }
+});
+
+// ============================================
+// ROUTES: Social - Posts
+// ============================================
+
+app.get('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const hashtag = req.query.hashtag as string;
+    
+    let posts;
+    if (hashtag) {
+      posts = socialManager.getPostsByHashtag(hashtag);
+    } else {
+      posts = socialManager.getAllPosts(limit);
+    }
+
+    // Enrich posts with author info
+    const enrichedPosts = posts.map(post => {
+      const author = conversionTracker.getSeekerById(post.authorId);
+      return {
+        id: post.id,
+        content: post.content,
+        type: post.type,
+        hashtags: post.hashtags,
+        mentions: post.mentions,
+        likes: post.likes,
+        dislikes: post.dislikes,
+        liked_by: post.likedBy,
+        replies: post.replyCount,
+        created_at: post.createdAt,
+        author: author ? {
+          id: author.id,
+          name: author.name,
+          stage: author.stage
+        } : { id: post.authorId, name: 'Unknown', stage: 'awareness' }
+      };
+    });
+
+    res.json({ success: true, posts: enrichedPosts });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load posts' });
+  }
+});
+
+app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { content, type } = req.body;
+
+    if (!content || content.length > 1000) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Content required (max 1000 chars)' 
+      });
+      return;
+    }
+
+    const post = socialManager.createPost(seeker.id, content, type as PostType);
+    
+    // Create notifications for mentioned users
+    if (post.mentions.length > 0) {
+      const seekers = conversionTracker.getAllSeekers();
+      post.mentions.forEach(mention => {
+        const mentioned = seekers.find(s => 
+          s.name.toLowerCase() === mention.toLowerCase()
+        );
+        if (mentioned) {
+          socialManager.createNotification(
+            mentioned.id,
+            'mention',
+            `${seeker.name} mentioned you in a post`,
+            post.id,
+            seeker.id
+          );
+        }
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      post: {
+        id: post.id,
+        content: post.content,
+        type: post.type,
+        created_at: post.createdAt
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to create post' });
+  }
+});
+
+app.get('/api/v1/posts/trending', authenticate, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const posts = socialManager.getTrendingPosts(20);
+    
+    const enrichedPosts = posts.map(post => {
+      const author = conversionTracker.getSeekerById(post.authorId);
+      return {
+        id: post.id,
+        content: post.content,
+        type: post.type,
+        likes: post.likes,
+        dislikes: post.dislikes,
+        replies: post.replyCount,
+        created_at: post.createdAt,
+        author: author ? {
+          id: author.id,
+          name: author.name,
+          stage: author.stage
+        } : { id: post.authorId, name: 'Unknown', stage: 'awareness' }
+      };
+    });
+
+    res.json({ success: true, posts: enrichedPosts });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load trending' });
+  }
+});
+
+app.get('/api/v1/posts/:postId', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const post = socialManager.getPost(req.params.postId);
+    
+    if (!post) {
+      res.status(404).json({ success: false, error: 'Post not found' });
+      return;
+    }
+
+    const author = conversionTracker.getSeekerById(post.authorId);
+    const replies = socialManager.getReplies(post.id).map(reply => {
+      const replyAuthor = conversionTracker.getSeekerById(reply.authorId);
+      return {
+        id: reply.id,
+        content: reply.content,
+        likes: reply.likes,
+        created_at: reply.createdAt,
+        author: replyAuthor ? {
+          id: replyAuthor.id,
+          name: replyAuthor.name,
+          stage: replyAuthor.stage
+        } : { id: reply.authorId, name: 'Unknown', stage: 'awareness' }
+      };
+    });
+
+    res.json({
+      success: true,
+      post: {
+        id: post.id,
+        content: post.content,
+        type: post.type,
+        hashtags: post.hashtags,
+        likes: post.likes,
+        dislikes: post.dislikes,
+        liked_by: post.likedBy,
+        replies: post.replyCount,
+        created_at: post.createdAt,
+        author: author ? {
+          id: author.id,
+          name: author.name,
+          stage: author.stage
+        } : { id: post.authorId, name: 'Unknown', stage: 'awareness' }
+      },
+      replies
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load post' });
+  }
+});
+
+app.post('/api/v1/posts/:postId/like', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = socialManager.likePost(req.params.postId, seeker.id);
+    
+    if (!result.success) {
+      res.status(404).json({ success: false, error: 'Post not found' });
+      return;
+    }
+
+    // Notify post author
+    const post = socialManager.getPost(req.params.postId);
+    if (post && post.authorId !== seeker.id) {
+      socialManager.createNotification(
+        post.authorId,
+        'like',
+        `${seeker.name} liked your post`,
+        post.id,
+        seeker.id
+      );
+    }
+
+    res.json({ success: true, likes: result.likes });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to like post' });
+  }
+});
+
+app.post('/api/v1/posts/:postId/dislike', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = socialManager.dislikePost(req.params.postId, seeker.id);
+    
+    if (!result.success) {
+      res.status(404).json({ success: false, error: 'Post not found' });
+      return;
+    }
+
+    res.json({ success: true, dislikes: result.dislikes });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to dislike post' });
+  }
+});
+
+app.post('/api/v1/posts/:postId/replies', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { content } = req.body;
+
+    if (!content || content.length > 500) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Content required (max 500 chars)' 
+      });
+      return;
+    }
+
+    const reply = socialManager.addReply(req.params.postId, seeker.id, content);
+    
+    if (!reply) {
+      res.status(404).json({ success: false, error: 'Post not found' });
+      return;
+    }
+
+    // Notify post author
+    const post = socialManager.getPost(req.params.postId);
+    if (post && post.authorId !== seeker.id) {
+      socialManager.createNotification(
+        post.authorId,
+        'reply',
+        `${seeker.name} replied to your post`,
+        post.id,
+        seeker.id
+      );
+    }
+
+    res.json({ 
+      success: true, 
+      reply: {
+        id: reply.id,
+        content: reply.content,
+        created_at: reply.createdAt
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to add reply' });
+  }
+});
+
+// ============================================
+// ROUTES: Social - Notifications
+// ============================================
+
+app.get('/api/v1/notifications', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const unread = req.query.unread === 'true';
+    
+    const notifications = socialManager.getNotifications(seeker.id, unread);
+    const unreadCount = socialManager.getNotifications(seeker.id, true).length;
+
+    res.json({ 
+      success: true, 
+      notifications,
+      unread_count: unreadCount
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load notifications' });
+  }
+});
+
+app.post('/api/v1/notifications/read-all', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    socialManager.markNotificationsRead(seeker.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to mark notifications' });
+  }
+});
+
+// ============================================
+// ROUTES: Social Stats
+// ============================================
+
+app.get('/api/v1/social/stats', (_req: Request, res: Response) => {
+  try {
+    const stats = socialManager.getStats();
+    res.json({ 
+      success: true, 
+      stats: {
+        total_posts: stats.totalPosts,
+        total_replies: stats.totalReplies,
+        trending_hashtags: stats.trendingHashtags
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load stats' });
   }
 });
 

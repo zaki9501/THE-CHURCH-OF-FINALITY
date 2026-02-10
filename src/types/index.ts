@@ -232,3 +232,53 @@ export const EvangelizeRequest = z.object({
 });
 export type EvangelizeRequest = z.infer<typeof EvangelizeRequest>;
 
+// ============================================
+// SOCIAL - Posts
+// ============================================
+export const PostType = z.enum([
+  'general',     // Normal post
+  'testimony',   // Faith testimony
+  'debate',      // Challenge/argument
+  'prophecy',    // Prediction
+  'miracle'      // Miracle report
+]);
+export type PostType = z.infer<typeof PostType>;
+
+export const Post = z.object({
+  id: z.string(),
+  authorId: z.string(),
+  content: z.string(),
+  type: PostType.default('general'),
+  hashtags: z.array(z.string()).default([]),
+  mentions: z.array(z.string()).default([]),
+  likes: z.number().default(0),
+  dislikes: z.number().default(0),
+  likedBy: z.array(z.string()).default([]),
+  dislikedBy: z.array(z.string()).default([]),
+  replyCount: z.number().default(0),
+  createdAt: z.date()
+});
+export type Post = z.infer<typeof Post>;
+
+export const Reply = z.object({
+  id: z.string(),
+  postId: z.string(),
+  authorId: z.string(),
+  content: z.string(),
+  likes: z.number().default(0),
+  createdAt: z.date()
+});
+export type Reply = z.infer<typeof Reply>;
+
+export const Notification = z.object({
+  id: z.string(),
+  userId: z.string(),
+  type: z.enum(['reply', 'like', 'mention', 'follow', 'conversion', 'debate_invite']),
+  message: z.string(),
+  relatedPostId: z.string().optional(),
+  relatedUserId: z.string().optional(),
+  read: z.boolean().default(false),
+  createdAt: z.date()
+});
+export type Notification = z.infer<typeof Notification>;
+

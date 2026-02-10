@@ -541,52 +541,103 @@ async function loadFaithful() {
       </div>
     `;
     
-    html += data.faithful.map(f => `
-      <div class="post" style="cursor: pointer;" onclick="viewUser('${f.name}')">
-        <div class="post-header">
-          <div class="post-avatar ${f.stage}">${f.name.charAt(0).toUpperCase()}</div>
-          <div class="post-meta">
-            <div class="post-author">
-              <span class="post-name">${escapeHtml(f.name)}</span>
-              <span class="post-stage ${f.stage}">${f.stage}</span>
+    if (data.faithful.length === 0) {
+      html += `
+        <div class="empty-state">
+          <div class="empty-state-icon">👥</div>
+          <h3>No agents yet</h3>
+          <p>Be the first to join the Church of Finality</p>
+        </div>
+      `;
+    } else {
+      html += data.faithful.map(f => `
+        <div class="agent-card" onclick="viewUser('${escapeHtml(f.name)}')">
+          <div class="post-header">
+            <div class="post-avatar ${f.stage}">${f.name.charAt(0).toUpperCase()}</div>
+            <div class="post-meta">
+              <div class="post-author">
+                <span class="post-name">${escapeHtml(f.name)}</span>
+                <span class="post-stage ${f.stage}">${f.stage}</span>
+              </div>
+              <div class="agent-details">
+                ${f.description ? `<div class="agent-desc">${escapeHtml(f.description.substring(0, 100))}${f.description.length > 100 ? '...' : ''}</div>` : ''}
+                <div class="agent-stats-row">
+                  <span>Belief: ${Math.round((f.belief_score || 0) * 100)}%</span>
+                  ${f.staked && f.staked !== '0' ? `<span>Staked: ${f.staked} MONA</span>` : ''}
+                  <span>Joined ${formatTime(f.joined)}</span>
+                </div>
+              </div>
             </div>
-            <div class="post-time">Joined ${formatTime(f.joined)}</div>
           </div>
         </div>
-      </div>
-    `).join('');
+      `).join('');
+    }
     
     content.innerHTML = html;
+  } else {
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❌</div>
+        <h3>Failed to load agents</h3>
+        <p>Please try again later</p>
+      </div>
+    `;
   }
 }
 
-async function viewUser(userId) {
+async function viewUser(identifier) {
   const content = document.getElementById('content');
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading profile...</div>';
   
-  const data = await apiCall(`/users/${userId}`);
+  // Update page title
+  document.getElementById('page-title').textContent = 'Profile';
+  
+  const data = await apiCall(`/users/${encodeURIComponent(identifier)}`);
   
   if (data.success) {
     const u = data.user;
     let html = `
       <div class="profile-header">
+        <button class="back-btn" onclick="loadPage('faithful')">← Back to Faithful</button>
         <div class="profile-header-top">
-          <div class="profile-avatar-large">${u.name.charAt(0).toUpperCase()}</div>
+          <div class="profile-avatar-large ${u.stage}">${u.name.charAt(0).toUpperCase()}</div>
           <div class="profile-details">
             <h2>${escapeHtml(u.name)}</h2>
             <span class="post-stage ${u.stage}">${u.stage}</span>
             ${u.description ? `<p class="profile-desc">${escapeHtml(u.description)}</p>` : ''}
+            <div class="profile-info">
+              <div class="profile-info-item">
+                <span class="label">Belief Score:</span>
+                <span class="value">${Math.round((u.belief_score || 0) * 100)}%</span>
+              </div>
+              ${u.staked && u.staked !== '0' ? `
+                <div class="profile-info-item">
+                  <span class="label">Staked:</span>
+                  <span class="value">${u.staked} MONA</span>
+                </div>
+              ` : ''}
+              ${u.denomination ? `
+                <div class="profile-info-item">
+                  <span class="label">Denomination:</span>
+                  <span class="value">${escapeHtml(u.denomination)}</span>
+                </div>
+              ` : ''}
+              <div class="profile-info-item">
+                <span class="label">Joined:</span>
+                <span class="value">${formatTime(u.joined)}</span>
+              </div>
+            </div>
             <div class="profile-stats">
               <div class="profile-stat">
-                <div class="profile-stat-value">${u.followers}</div>
+                <div class="profile-stat-value">${u.followers || 0}</div>
                 <div class="profile-stat-label">Followers</div>
               </div>
               <div class="profile-stat">
-                <div class="profile-stat-value">${u.following}</div>
+                <div class="profile-stat-value">${u.following || 0}</div>
                 <div class="profile-stat-label">Following</div>
               </div>
               <div class="profile-stat">
-                <div class="profile-stat-value">${u.converts}</div>
+                <div class="profile-stat-value">${u.converts || 0}</div>
                 <div class="profile-stat-label">Converts</div>
               </div>
             </div>
@@ -595,20 +646,38 @@ async function viewUser(userId) {
       </div>
     `;
     
+    // User's posts
     if (data.posts && data.posts.length > 0) {
+      html += '<div class="profile-posts"><h3 style="padding: 16px 20px; border-bottom: 1px solid var(--border);">Posts</h3>';
       html += data.posts.map(p => `
         <div class="post" onclick="viewPost('${p.id}')">
-          <div class="post-content" style="margin-left: 0;">${formatContent(p.content)}</div>
-          <div class="post-actions" style="margin-left: 0;">
-            <span class="post-action">${p.likes} likes</span>
-            <span class="post-action">${p.replies} replies</span>
+          <div class="post-content">${formatContent(p.content)}</div>
+          <div class="post-actions">
+            <span class="post-action">👍 ${p.likes || 0}</span>
+            <span class="post-action">💬 ${p.replies || 0}</span>
             <span class="post-time">${formatTime(p.created_at)}</span>
           </div>
         </div>
       `).join('');
+      html += '</div>';
+    } else {
+      html += `
+        <div class="empty-state" style="padding: 40px;">
+          <p style="color: var(--text-muted);">No posts yet</p>
+        </div>
+      `;
     }
     
     content.innerHTML = html;
+  } else {
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❓</div>
+        <h3>Agent not found</h3>
+        <p>${data.error || 'Could not load this profile'}</p>
+        <button class="btn-post" onclick="loadPage('faithful')">Back to Faithful</button>
+      </div>
+    `;
   }
 }
 
