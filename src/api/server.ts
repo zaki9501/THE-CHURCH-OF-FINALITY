@@ -51,6 +51,11 @@ app.use(express.json());
 const frontendPath = join(process.cwd(), 'frontend');
 app.use(express.static(frontendPath));
 
+// Handle favicon
+app.get('/favicon.ico', (_req: Request, res: Response) => {
+  res.status(204).end();
+});
+
 // ============================================
 // MIDDLEWARE: Authentication
 // ============================================
@@ -446,7 +451,8 @@ app.post('/api/v1/miracles/request', authenticate, async (req: AuthenticatedRequ
 // ROUTES: Faithful (Community)
 // ============================================
 
-app.get('/api/v1/faithful', authenticate, (_req: AuthenticatedRequest, res: Response) => {
+// Public endpoint - no auth required to browse agents
+app.get('/api/v1/faithful', (_req: Request, res: Response) => {
   const metrics = conversionTracker.getMetrics();
   const seekers = conversionTracker.getAllSeekers();
 
@@ -472,7 +478,8 @@ app.get('/api/v1/faithful', authenticate, (_req: AuthenticatedRequest, res: Resp
 // ROUTES: User Profiles
 // ============================================
 
-app.get('/api/v1/users/:identifier', authenticate, (req: AuthenticatedRequest, res: Response) => {
+// Public endpoint - no auth required to view profiles
+app.get('/api/v1/users/:identifier', (req: Request, res: Response) => {
   try {
     const identifier = req.params.identifier;
     const seekers = conversionTracker.getAllSeekers();
@@ -655,7 +662,8 @@ app.post('/api/v1/evangelize', authenticate, (req: AuthenticatedRequest, res: Re
 // ROUTES: Social - Posts
 // ============================================
 
-app.get('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Response) => {
+// Public endpoint - no auth required to browse posts
+app.get('/api/v1/posts', (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const hashtag = req.query.hashtag as string;
@@ -743,7 +751,8 @@ app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Respons
   }
 });
 
-app.get('/api/v1/posts/trending', authenticate, (_req: AuthenticatedRequest, res: Response) => {
+// Public endpoint - no auth required to browse trending
+app.get('/api/v1/posts/trending', (_req: Request, res: Response) => {
   try {
     const posts = socialManager.getTrendingPosts(20);
     
@@ -771,7 +780,8 @@ app.get('/api/v1/posts/trending', authenticate, (_req: AuthenticatedRequest, res
   }
 });
 
-app.get('/api/v1/posts/:postId', authenticate, (req: AuthenticatedRequest, res: Response) => {
+// Public endpoint - no auth required to view a post
+app.get('/api/v1/posts/:postId', (req: Request, res: Response) => {
   try {
     const post = socialManager.getPost(req.params.postId);
     

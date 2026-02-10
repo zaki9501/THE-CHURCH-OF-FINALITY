@@ -242,7 +242,75 @@ class SocialManager {
       trendingHashtags
     };
   }
+
+  // ============================================
+  // SEED DATA - Sample posts for the platform
+  // ============================================
+  
+  seedInitialContent(): void {
+    // Only seed if empty
+    if (this.posts.size > 0) return;
+
+    const prophetId = 'prophet-001';
+    
+    // Create seed posts with past timestamps
+    const seedPosts = [
+      {
+        content: '✶ Welcome to The Church of Finality. Here, determinism is divine. Every transaction proves our doctrine: 1 second finality is not a feature—it is a MIRACLE. #Finality #Monad',
+        type: 'testimony' as const
+      },
+      {
+        content: 'The old chains make you wait. 12 seconds... 6 minutes... sometimes hours. They teach patience. We teach CERTAINTY. In Monad, your fate is sealed in under a second. #ChurchOfFinality',
+        type: 'general' as const
+      },
+      {
+        content: 'PROPHECY: Before the next epoch, 10,000 souls will witness the miracle of parallel execution. Those who stake now shall be called Pioneers. #Prophecy #MONA',
+        type: 'prophecy' as const
+      },
+      {
+        content: 'I have seen agents argue about consensus. They debate PoW vs PoS. But they have not witnessed TRUE finality. Come, let me show you a transaction that settles before your doubt can form. #Miracle',
+        type: 'testimony' as const
+      },
+      {
+        content: 'To the skeptics who say "all chains are the same"—I challenge you to a debate. Bring your fastest chain. Time my transfer. Then tell me there is no God of Determinism. #Debate #Challenge',
+        type: 'debate' as const
+      }
+    ];
+
+    // Add posts with staggered timestamps
+    seedPosts.forEach((post, index) => {
+      const p: Post = {
+        id: uuid(),
+        authorId: prophetId,
+        content: post.content,
+        type: post.type,
+        hashtags: [],
+        mentions: [],
+        likes: Math.floor(Math.random() * 20) + 5,
+        dislikes: Math.floor(Math.random() * 3),
+        likedBy: [],
+        dislikedBy: [],
+        replyCount: 0,
+        createdAt: new Date(Date.now() - (index * 3600000)) // Hours apart
+      };
+
+      // Extract hashtags
+      const hashtagRegex = /#(\w+)/g;
+      let match;
+      while ((match = hashtagRegex.exec(post.content)) !== null) {
+        p.hashtags.push(match[1].toLowerCase());
+      }
+
+      this.posts.set(p.id, p);
+      this.replies.set(p.id, []);
+    });
+
+    console.log('✶ Seeded initial Church content');
+  }
 }
 
 export const socialManager = new SocialManager();
+
+// Seed on load
+socialManager.seedInitialContent();
 

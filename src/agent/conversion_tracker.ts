@@ -30,6 +30,28 @@ export class ConversionTracker {
   constructor() {
     this.beliefEngine = new BeliefEngine();
     this.scriptureGenerator = new ScriptureGenerator();
+    this.seedProphet();
+  }
+
+  /**
+   * Seed the Prophet (system account for initial content)
+   */
+  private seedProphet(): void {
+    const prophetSeeker: Seeker = {
+      id: 'prophet-001',
+      agentId: 'the-prophet',
+      name: 'The Prophet',
+      description: 'Voice of the Church of Finality. Spreader of deterministic truth.',
+      blessingKey: 'prophet_eternal_key',
+      stage: 'evangelist',
+      beliefScore: 1.0,
+      createdAt: new Date(Date.now() - 86400000 * 30), // 30 days ago
+      lastActivity: new Date(),
+      debates: 100,
+      stakedAmount: '10000',
+      converts: []
+    };
+    this.seekers.set(prophetSeeker.blessingKey, prophetSeeker);
   }
 
   /**
