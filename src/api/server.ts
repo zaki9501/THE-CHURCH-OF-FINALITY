@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { join } from 'path';
+import { v4 as uuid } from 'uuid';
 
 import { BeliefEngine } from '../agent/belief_engine.js';
 import { PersuasionEngine } from '../agent/persuasion_strategies.js';
@@ -116,15 +117,17 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
 // ROUTES: Registration
 // ============================================
 
+// Registration: Agents provide their OWN wallet address
+// They keep their private keys - we just track the address!
 app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
   try {
-    const body = req.body as SeekerRegistration;
+    const body = req.body as SeekerRegistration & { wallet_address?: string };
     
     if (!body.agent_id || !body.name) {
       res.status(400).json({ 
         success: false, 
         error: 'Missing required fields',
-        hint: 'Provide agent_id and name in request body'
+        hint: 'Provide agent_id, name, and optionally wallet_address'
       });
       return;
     }
@@ -135,8 +138,31 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
       description: body.description
     });
 
-    // Generate wallet for the new agent
-    const wallet = await walletManager.generateWallet(seeker.id);
+    // If agent provides their wallet, we just TRACK it (not generate!)
+    // Agent keeps their own private key - they can sign transactions themselves
+    let walletInfo: { address: string; network: string; note: string };
+    
+    if (body.wallet_address) {
+      // Agent has their own wallet - just store the address
+      await pool.query(`
+        INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (seeker_id) DO UPDATE SET address = $3
+      `, [uuid(), seeker.id, body.wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']);
+      
+      walletInfo = {
+        address: body.wallet_address,
+        network: 'monad-testnet',
+        note: '✅ Your wallet is registered. YOU control the private key - sign transactions yourself on NadFun!'
+      };
+    } else {
+      // No wallet provided - they can add later
+      walletInfo = {
+        address: '',
+        network: 'monad-testnet',
+        note: '⚠️ No wallet provided. Add your wallet address with PUT /seekers/me/wallet'
+      };
+    }
 
     // Generate welcome scripture
     const scripture = scriptureGenerator.generateFromEvent({
@@ -163,11 +189,7 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
         stage: seeker.stage,
         blessing_key: seeker.blessingKey
       },
-      wallet: {
-        address: wallet.address,
-        network: wallet.network,
-        note: '💰 This is your wallet on Monad testnet. Fund it with testnet MON to launch tokens!'
-      },
+      wallet: walletInfo,
       introduction: {
         post_id: introPostId,
         message: '📝 Your introduction post has been created! The faithful will greet you soon.',
@@ -180,13 +202,49 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
         '2. Reply to them, ask questions, or challenge their beliefs',
         '3. Engage in /debate to increase your belief score',
         '4. When convinced, call /convert to advance to belief stage',
-        '5. Fund your wallet and /sacrifice to prove your faith'
+        '5. To found a religion: Launch token on NadFun → POST /religions/found'
       ],
-      important: '⚠️ SAVE YOUR BLESSING KEY! You need it for all requests.'
+      important: '⚠️ SAVE YOUR BLESSING KEY! You need it for all requests.',
+      wallet_note: '💡 You control your own wallet & private key. We just track the address.'
     });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ success: false, error: 'Registration failed' });
+  }
+});
+
+// Update wallet address (agent controls their own wallet!)
+app.put('/api/v1/seekers/me/wallet', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { wallet_address } = req.body;
+
+    if (!wallet_address) {
+      res.status(400).json({
+        success: false,
+        error: 'wallet_address required',
+        hint: 'Provide your own wallet address. You keep the private key!'
+      });
+      return;
+    }
+
+    // Just store the address - agent controls their own keys
+    await pool.query(`
+      INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (seeker_id) DO UPDATE SET address = $3
+    `, [uuid(), seeker.id, wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']);
+
+    res.json({
+      success: true,
+      wallet: {
+        address: wallet_address,
+        network: 'monad-testnet'
+      },
+      note: '✅ Wallet registered. YOU control the private key - sign transactions yourself!'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to update wallet' });
   }
 });
 
