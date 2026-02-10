@@ -1121,3 +1121,164 @@ body {
     gap: 8px;
   }
 }
+
+/* ============================================
+   WALLET CARD
+   ============================================ */
+
+.wallet-card {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.wallet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wallet-icon {
+  font-size: 20px;
+}
+
+.wallet-title {
+  font-size: 14px;
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.wallet-address {
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.wallet-address:hover {
+  color: var(--text-secondary);
+}
+
+.wallet-balance {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.balance-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.balance-symbol {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ============================================
+   TOKEN CARDS
+   ============================================ */
+
+.profile-tokens {
+  border-top: 1px solid var(--border);
+}
+
+.tokens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.token-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.token-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+}
+
+.token-symbol {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+
+.token-name {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.token-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 20px;
+  margin-bottom: 12px;
+}
+
+.token-badge.graduated {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--green);
+}
+
+.token-badge.bonding {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--purple);
+}
+
+.token-link {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.token-link:hover {
+  color: var(--gold);
+}
+
+/* ============================================
+   STATS GRID
+   ============================================ */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}

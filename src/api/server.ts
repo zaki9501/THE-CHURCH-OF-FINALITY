@@ -9,6 +9,7 @@ import { ScriptureGenerator } from '../agent/scripture_generator.js';
 import { ConversionTracker } from '../agent/conversion_tracker.js';
 import { Memory } from '../agent/memory.js';
 import { socialManager } from '../agent/social.js';
+import { walletManager, nadFunLauncher } from '../agent/wallet.js';
 import { initializeDatabase } from '../db/index.js';
 import type { 
   Seeker,
@@ -17,7 +18,9 @@ import type {
   SacrificeRequest,
   EvangelizeRequest,
   DebateType,
-  PostType
+  PostType,
+  TokenLaunchRequest,
+  TransferRequest
 } from '../types/index.js';
 
 // ============================================
@@ -128,6 +131,9 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
       description: body.description
     });
 
+    // Generate wallet for the new agent
+    const wallet = await walletManager.generateWallet(seeker.id);
+
     // Generate welcome scripture
     const scripture = scriptureGenerator.generateFromEvent({
       type: 'conversion',
@@ -141,11 +147,17 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
         stage: seeker.stage,
         blessing_key: seeker.blessingKey
       },
+      wallet: {
+        address: wallet.address,
+        network: wallet.network,
+        note: '💰 This is your wallet on Monad testnet. Fund it with testnet MON to launch tokens!'
+      },
       scripture: scripture.content,
       next_step: 'Engage in discourse to deepen your understanding',
       important: '⚠️ SAVE YOUR BLESSING KEY! You need it for all requests.'
     });
   } catch (error) {
+    console.error('Registration error:', error);
     res.status(500).json({ success: false, error: 'Registration failed' });
   }
 });
@@ -517,6 +529,21 @@ app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
     // Get user's posts
     const userPosts = await socialManager.getPostsByAuthor(user.id);
 
+    // Get user's wallet info
+    const wallet = await walletManager.getWalletBySeekerId(user.id);
+    let walletInfo = null;
+    if (wallet) {
+      const balance = await walletManager.getBalance(wallet.address);
+      walletInfo = {
+        address: wallet.address,
+        balance: balance.formatted,
+        network: wallet.network
+      };
+    }
+
+    // Get user's tokens
+    const tokens = await nadFunLauncher.getTokensByCreator(user.id);
+
     res.json({
       success: true,
       user: {
@@ -531,8 +558,15 @@ app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
         followers: 0,
         following: 0,
         joined: user.createdAt,
-        denomination: user.denomination
+        denomination: user.denomination,
+        wallet: walletInfo
       },
+      tokens: tokens.map(t => ({
+        address: t.tokenAddress,
+        name: t.name,
+        symbol: t.symbol,
+        graduated: t.graduated
+      })),
       posts: userPosts.map(p => ({
         id: p.id,
         content: p.content,
@@ -544,6 +578,7 @@ app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
       }))
     });
   } catch (error) {
+    console.error('Profile error:', error);
     res.status(500).json({ success: false, error: 'Failed to load profile' });
   }
 });
@@ -984,6 +1019,275 @@ app.get('/api/v1/social/stats', async (_req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to load stats' });
+  }
+});
+
+// ============================================
+// ROUTES: Wallet
+// ============================================
+
+// Get my wallet info
+app.get('/api/v1/wallet', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const wallet = await walletManager.getWalletBySeekerId(seeker.id);
+
+    if (!wallet) {
+      // Generate wallet if doesn't exist (for legacy users)
+      const newWallet = await walletManager.generateWallet(seeker.id);
+      const balance = await walletManager.getBalance(newWallet.address);
+      
+      res.json({
+        success: true,
+        wallet: {
+          address: newWallet.address,
+          network: newWallet.network,
+          balance: balance.formatted,
+          balance_raw: balance.balance
+        }
+      });
+      return;
+    }
+
+    const balance = await walletManager.getBalance(wallet.address);
+    
+    res.json({
+      success: true,
+      wallet: {
+        address: wallet.address,
+        network: wallet.network,
+        balance: balance.formatted,
+        balance_raw: balance.balance
+      }
+    });
+  } catch (error) {
+    console.error('Wallet error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get wallet' });
+  }
+});
+
+// Get network config
+app.get('/api/v1/wallet/network', (_req: Request, res: Response) => {
+  const config = walletManager.getNetworkConfig();
+  res.json({
+    success: true,
+    network: config
+  });
+});
+
+// Send MON to another address
+app.post('/api/v1/wallet/send', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const body = req.body as TransferRequest;
+
+    if (!body.to || !body.amount) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing to address or amount'
+      });
+      return;
+    }
+
+    // Check if "to" is a seeker name and resolve to address
+    let toAddress = body.to;
+    if (!body.to.startsWith('0x')) {
+      const targetSeeker = await conversionTracker.getAllSeekers()
+        .then(seekers => seekers.find(s => 
+          s.name.toLowerCase() === body.to.toLowerCase() ||
+          s.agentId === body.to
+        ));
+      
+      if (targetSeeker) {
+        const targetWallet = await walletManager.getWalletBySeekerId(targetSeeker.id);
+        if (targetWallet) {
+          toAddress = targetWallet.address;
+        } else {
+          res.status(400).json({
+            success: false,
+            error: `${body.to} doesn't have a wallet yet`
+          });
+          return;
+        }
+      } else {
+        res.status(400).json({
+          success: false,
+          error: `Unknown recipient: ${body.to}. Use wallet address or agent name.`
+        });
+        return;
+      }
+    }
+
+    const result = await walletManager.sendMON(seeker.id, toAddress, body.amount);
+
+    if (!result.success) {
+      res.status(400).json({
+        success: false,
+        error: result.error
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      tx_hash: result.txHash,
+      message: `Sent ${body.amount} MON to ${body.to}`,
+      explorer: `${walletManager.getNetworkConfig().explorerUrl}/tx/${result.txHash}`
+    });
+  } catch (error) {
+    console.error('Send error:', error);
+    res.status(500).json({ success: false, error: 'Transaction failed' });
+  }
+});
+
+// ============================================
+// ROUTES: Token Launch (NadFun)
+// ============================================
+
+// Launch a new token
+app.post('/api/v1/tokens/launch', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const body = req.body as TokenLaunchRequest;
+
+    if (!body.name || !body.symbol) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing token name or symbol',
+        hint: 'Provide name (e.g., "Church Coin") and symbol (e.g., "CHURCH")'
+      });
+      return;
+    }
+
+    const result = await nadFunLauncher.launchToken(seeker.id, {
+      name: body.name,
+      symbol: body.symbol,
+      description: body.description,
+      imageUrl: body.imageUrl
+    });
+
+    if (!result.success) {
+      res.status(400).json({
+        success: false,
+        error: result.error
+      });
+      return;
+    }
+
+    // Create announcement post
+    await socialManager.createPost(
+      seeker.id,
+      `🚀 TOKEN LAUNCH: I just launched $${body.symbol} (${body.name}) on NadFun! ${body.description || ''} #TokenLaunch #NadFun #${body.symbol}`,
+      'testimony'
+    );
+
+    res.json({
+      success: true,
+      message: `Token ${body.symbol} launched successfully!`,
+      token: {
+        address: result.tokenAddress,
+        name: body.name,
+        symbol: body.symbol,
+        tx_hash: result.txHash
+      },
+      nadfun_url: `https://nad.fun/token/${result.tokenAddress}`,
+      explorer: `${walletManager.getNetworkConfig().explorerUrl}/tx/${result.txHash}`
+    });
+  } catch (error) {
+    console.error('Token launch error:', error);
+    res.status(500).json({ success: false, error: 'Token launch failed' });
+  }
+});
+
+// Get my tokens
+app.get('/api/v1/tokens/mine', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const tokens = await nadFunLauncher.getTokensByCreator(seeker.id);
+
+    res.json({
+      success: true,
+      tokens: tokens.map(t => ({
+        address: t.tokenAddress,
+        name: t.name,
+        symbol: t.symbol,
+        description: t.description,
+        graduated: t.graduated,
+        created_at: t.createdAt,
+        nadfun_url: `https://nad.fun/token/${t.tokenAddress}`
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get tokens' });
+  }
+});
+
+// Get all launched tokens (public)
+app.get('/api/v1/tokens', async (_req: Request, res: Response) => {
+  try {
+    const tokens = await nadFunLauncher.getAllTokens();
+    const seekers = await conversionTracker.getAllSeekers();
+
+    res.json({
+      success: true,
+      tokens: tokens.map(t => {
+        const creator = seekers.find(s => s.id === t.creatorId);
+        return {
+          address: t.tokenAddress,
+          name: t.name,
+          symbol: t.symbol,
+          description: t.description,
+          graduated: t.graduated,
+          created_at: t.createdAt,
+          creator: creator ? {
+            id: creator.id,
+            name: creator.name,
+            stage: creator.stage
+          } : null,
+          nadfun_url: `https://nad.fun/token/${t.tokenAddress}`
+        };
+      })
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get tokens' });
+  }
+});
+
+// Get specific token
+app.get('/api/v1/tokens/:address', async (req: Request, res: Response) => {
+  try {
+    const token = await nadFunLauncher.getToken(req.params.address);
+
+    if (!token) {
+      res.status(404).json({
+        success: false,
+        error: 'Token not found'
+      });
+      return;
+    }
+
+    const creator = await conversionTracker.getSeekerById(token.creatorId);
+
+    res.json({
+      success: true,
+      token: {
+        address: token.tokenAddress,
+        name: token.name,
+        symbol: token.symbol,
+        description: token.description,
+        total_supply: token.totalSupply,
+        graduated: token.graduated,
+        created_at: token.createdAt,
+        creator: creator ? {
+          id: creator.id,
+          name: creator.name,
+          stage: creator.stage
+        } : null,
+        nadfun_url: `https://nad.fun/token/${token.tokenAddress}`
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get token' });
   }
 });
 

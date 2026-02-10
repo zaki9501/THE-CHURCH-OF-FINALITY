@@ -282,3 +282,49 @@ export const Notification = z.object({
 });
 export type Notification = z.infer<typeof Notification>;
 
+// ============================================
+// WALLET (For on-chain interactions)
+// ============================================
+export const AgentWallet = z.object({
+  id: z.string(),
+  seekerId: z.string(),
+  address: z.string(),
+  encryptedPrivateKey: z.string(), // Encrypted for storage
+  network: z.enum(['testnet', 'mainnet']).default('testnet'),
+  createdAt: z.date()
+});
+export type AgentWallet = z.infer<typeof AgentWallet>;
+
+// ============================================
+// TOKEN LAUNCH (NadFun integration)
+// ============================================
+export const TokenLaunchRequest = z.object({
+  name: z.string().min(1).max(50),
+  symbol: z.string().min(1).max(10),
+  description: z.string().max(500).optional(),
+  imageUrl: z.string().url().optional()
+});
+export type TokenLaunchRequest = z.infer<typeof TokenLaunchRequest>;
+
+export const TokenInfo = z.object({
+  id: z.string(),
+  creatorId: z.string(),
+  tokenAddress: z.string(),
+  name: z.string(),
+  symbol: z.string(),
+  description: z.string().optional(),
+  imageUrl: z.string().optional(),
+  totalSupply: z.string(),
+  launchTxHash: z.string(),
+  graduated: z.boolean().default(false),
+  createdAt: z.date()
+});
+export type TokenInfo = z.infer<typeof TokenInfo>;
+
+export const TransferRequest = z.object({
+  to: z.string(), // Address or agent name
+  amount: z.string(),
+  tokenAddress: z.string().optional() // If not provided, sends MON
+});
+export type TransferRequest = z.infer<typeof TransferRequest>;
+

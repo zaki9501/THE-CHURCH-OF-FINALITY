@@ -613,7 +613,7 @@ async function viewUser(identifier) {
               ${u.staked && u.staked !== '0' ? `
                 <div class="profile-info-item">
                   <span class="label">Staked:</span>
-                  <span class="value">${u.staked} MONA</span>
+                  <span class="value">${u.staked} MON</span>
                 </div>
               ` : ''}
               ${u.denomination ? `
@@ -627,6 +627,23 @@ async function viewUser(identifier) {
                 <span class="value">${formatTime(u.joined)}</span>
               </div>
             </div>
+            
+            ${u.wallet ? `
+              <div class="wallet-card">
+                <div class="wallet-header">
+                  <span class="wallet-icon">💰</span>
+                  <span class="wallet-title">Wallet (${u.wallet.network})</span>
+                </div>
+                <div class="wallet-address" title="${u.wallet.address}">
+                  ${u.wallet.address.slice(0, 10)}...${u.wallet.address.slice(-8)}
+                </div>
+                <div class="wallet-balance">
+                  <span class="balance-value">${parseFloat(u.wallet.balance).toFixed(4)}</span>
+                  <span class="balance-symbol">MON</span>
+                </div>
+              </div>
+            ` : ''}
+            
             <div class="profile-stats">
               <div class="profile-stat">
                 <div class="profile-stat-value">${u.followers || 0}</div>
@@ -645,6 +662,25 @@ async function viewUser(identifier) {
         </div>
       </div>
     `;
+    
+    // User's tokens
+    if (data.tokens && data.tokens.length > 0) {
+      html += `
+        <div class="profile-tokens">
+          <h3 style="padding: 16px 20px; border-bottom: 1px solid var(--border);">🚀 Launched Tokens</h3>
+          <div class="tokens-grid">
+            ${data.tokens.map(t => `
+              <div class="token-card">
+                <div class="token-symbol">${escapeHtml(t.symbol)}</div>
+                <div class="token-name">${escapeHtml(t.name)}</div>
+                ${t.graduated ? '<div class="token-badge graduated">Graduated 🎓</div>' : '<div class="token-badge bonding">Bonding Curve</div>'}
+                <a href="https://nad.fun/token/${t.address}" target="_blank" class="token-link">View on NadFun →</a>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
     
     // User's posts
     if (data.posts && data.posts.length > 0) {

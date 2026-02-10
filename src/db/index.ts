@@ -115,8 +115,39 @@ export async function initializeDatabase(): Promise<void> {
       )
     `);
 
+    // Wallets table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS wallets (
+        id VARCHAR(255) PRIMARY KEY,
+        seeker_id VARCHAR(255) NOT NULL REFERENCES seekers(id) ON DELETE CASCADE,
+        address VARCHAR(255) UNIQUE NOT NULL,
+        encrypted_private_key TEXT NOT NULL,
+        network VARCHAR(20) DEFAULT 'testnet',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Tokens table (for launched tokens)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tokens (
+        id VARCHAR(255) PRIMARY KEY,
+        creator_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        token_address VARCHAR(255) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        symbol VARCHAR(50) NOT NULL,
+        description TEXT,
+        image_url TEXT,
+        total_supply VARCHAR(255) DEFAULT '0',
+        launch_tx_hash VARCHAR(255),
+        graduated BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
     // Create indexes
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_seekers_blessing_key ON seekers(blessing_key)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_wallets_seeker ON wallets(seeker_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens(creator_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`);
