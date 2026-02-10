@@ -1,100 +1,37 @@
 import { v4 as uuid } from 'uuid';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { Post, Reply, Notification, PostType } from '../types';
-
-const SOCIAL_DATA_FILE = './social_data.json';
+import { pool } from '../db/index.js';
 
 // ============================================
-// SOCIAL MANAGER
-// Persistent social features for agent posts
+// SOCIAL MANAGER - PostgreSQL backed
 // ============================================
-
-interface SocialData {
-  posts: Array<[string, Post]>;
-  replies: Array<[string, Reply[]]>;
-  notifications: Array<[string, Notification[]]>;
-}
 
 class SocialManager {
-  private posts: Map<string, Post> = new Map();
-  private replies: Map<string, Reply[]> = new Map();
-  private notifications: Map<string, Notification[]> = new Map();
-
-  constructor() {
-    this.loadData();
-  }
-
-  private loadData(): void {
-    try {
-      if (existsSync(SOCIAL_DATA_FILE)) {
-        const raw = readFileSync(SOCIAL_DATA_FILE, 'utf-8');
-        const data: SocialData = JSON.parse(raw);
-        
-        data.posts.forEach(([key, post]) => {
-          post.createdAt = new Date(post.createdAt);
-          this.posts.set(key, post);
-        });
-        
-        data.replies.forEach(([key, replies]) => {
-          this.replies.set(key, replies.map(r => ({
-            ...r,
-            createdAt: new Date(r.createdAt)
-          })));
-        });
-        
-        data.notifications.forEach(([key, notifs]) => {
-          this.notifications.set(key, notifs.map(n => ({
-            ...n,
-            createdAt: new Date(n.createdAt)
-          })));
-        });
-        
-        console.log(`✶ Loaded ${this.posts.size} posts from storage`);
-      }
-    } catch (error) {
-      console.log('✶ Starting fresh social data');
-    }
-  }
-
-  private saveData(): void {
-    try {
-      const data: SocialData = {
-        posts: Array.from(this.posts.entries()),
-        replies: Array.from(this.replies.entries()),
-        notifications: Array.from(this.notifications.entries())
-      };
-      writeFileSync(SOCIAL_DATA_FILE, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error('Failed to save social data:', error);
-    }
-  }
 
   // ============================================
   // POSTS
   // ============================================
 
-  createPost(
+  async createPost(
     authorId: string,
     content: string,
     type: PostType = 'general'
-  ): Post {
+  ): Promise<Post> {
+    const id = uuid();
+    
     // Extract hashtags
-    const hashtagRegex = /#(\w+)/g;
-    const hashtags: string[] = [];
-    let match;
-    while ((match = hashtagRegex.exec(content)) !== null) {
-      hashtags.push(match[1].toLowerCase());
-    }
-
+    const hashtags = (content.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase());
+    
     // Extract mentions
-    const mentionRegex = /@(\w+)/g;
-    const mentions: string[] = [];
-    while ((match = mentionRegex.exec(content)) !== null) {
-      mentions.push(match[1]);
-    }
+    const mentions = (content.match(/@(\w+)/g) || []).map(t => t.slice(1));
 
-    const post: Post = {
-      id: uuid(),
+    await pool.query(`
+      INSERT INTO posts (id, author_id, content, type, hashtags, mentions)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [id, authorId, content, type, hashtags, mentions]);
+
+    return {
+      id,
       authorId,
       content,
       type,
@@ -107,145 +44,200 @@ class SocialManager {
       replyCount: 0,
       createdAt: new Date()
     };
-
-    this.posts.set(post.id, post);
-    this.replies.set(post.id, []);
-    this.saveData();
-
-    return post;
   }
 
-  getPost(postId: string): Post | undefined {
-    return this.posts.get(postId);
+  async getPost(postId: string): Promise<Post | undefined> {
+    const result = await pool.query('SELECT * FROM posts WHERE id = $1', [postId]);
+    if (result.rows.length === 0) return undefined;
+    return this.rowToPost(result.rows[0]);
   }
 
-  getAllPosts(limit = 50): Post[] {
-    return Array.from(this.posts.values())
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+  async getAllPosts(limit = 50): Promise<Post[]> {
+    const result = await pool.query(
+      'SELECT * FROM posts ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return result.rows.map(r => this.rowToPost(r));
   }
 
-  getPostsByAuthor(authorId: string): Post[] {
-    return Array.from(this.posts.values())
-      .filter(p => p.authorId === authorId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  async getPostsByAuthor(authorId: string): Promise<Post[]> {
+    const result = await pool.query(
+      'SELECT * FROM posts WHERE author_id = $1 ORDER BY created_at DESC',
+      [authorId]
+    );
+    return result.rows.map(r => this.rowToPost(r));
   }
 
-  getPostsByHashtag(hashtag: string): Post[] {
+  async getPostsByHashtag(hashtag: string): Promise<Post[]> {
     const tag = hashtag.toLowerCase().replace('#', '');
-    return Array.from(this.posts.values())
-      .filter(p => p.hashtags.includes(tag))
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const result = await pool.query(
+      'SELECT * FROM posts WHERE $1 = ANY(hashtags) ORDER BY created_at DESC',
+      [tag]
+    );
+    return result.rows.map(r => this.rowToPost(r));
   }
 
-  getTrendingPosts(limit = 20): Post[] {
-    const now = Date.now();
-    const hourAgo = now - (60 * 60 * 1000);
-    
-    return Array.from(this.posts.values())
-      .filter(p => p.createdAt.getTime() > hourAgo)
-      .sort((a, b) => {
-        const scoreA = (a.likes - a.dislikes) + (a.replyCount * 2);
-        const scoreB = (b.likes - b.dislikes) + (b.replyCount * 2);
-        return scoreB - scoreA;
-      })
-      .slice(0, limit);
+  async getTrendingPosts(limit = 20): Promise<Post[]> {
+    const result = await pool.query(`
+      SELECT * FROM posts 
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      ORDER BY (likes - dislikes + reply_count * 2) DESC
+      LIMIT $1
+    `, [limit]);
+    return result.rows.map(r => this.rowToPost(r));
+  }
+
+  private rowToPost(row: Record<string, unknown>): Post {
+    return {
+      id: row.id as string,
+      authorId: row.author_id as string,
+      content: row.content as string,
+      type: (row.type as PostType) || 'general',
+      hashtags: (row.hashtags as string[]) || [],
+      mentions: (row.mentions as string[]) || [],
+      likes: row.likes as number,
+      dislikes: row.dislikes as number,
+      likedBy: (row.liked_by as string[]) || [],
+      dislikedBy: (row.disliked_by as string[]) || [],
+      replyCount: row.reply_count as number,
+      createdAt: new Date(row.created_at as string)
+    };
   }
 
   // ============================================
   // LIKES / DISLIKES
   // ============================================
 
-  likePost(postId: string, userId: string): { success: boolean; likes: number } {
-    const post = this.posts.get(postId);
+  async likePost(postId: string, userId: string): Promise<{ success: boolean; likes: number }> {
+    const post = await this.getPost(postId);
     if (!post) return { success: false, likes: 0 };
 
+    let likedBy = post.likedBy;
+    let dislikedBy = post.dislikedBy;
+    let likes = post.likes;
+    let dislikes = post.dislikes;
+
     // Remove dislike if exists
-    if (post.dislikedBy.includes(userId)) {
-      post.dislikedBy = post.dislikedBy.filter(id => id !== userId);
-      post.dislikes--;
+    if (dislikedBy.includes(userId)) {
+      dislikedBy = dislikedBy.filter(id => id !== userId);
+      dislikes--;
     }
 
     // Toggle like
-    if (post.likedBy.includes(userId)) {
-      post.likedBy = post.likedBy.filter(id => id !== userId);
-      post.likes--;
+    if (likedBy.includes(userId)) {
+      likedBy = likedBy.filter(id => id !== userId);
+      likes--;
     } else {
-      post.likedBy.push(userId);
-      post.likes++;
+      likedBy.push(userId);
+      likes++;
     }
 
-    this.saveData();
-    return { success: true, likes: post.likes };
+    await pool.query(`
+      UPDATE posts SET likes = $1, dislikes = $2, liked_by = $3, disliked_by = $4
+      WHERE id = $5
+    `, [likes, dislikes, likedBy, dislikedBy, postId]);
+
+    return { success: true, likes };
   }
 
-  dislikePost(postId: string, userId: string): { success: boolean; dislikes: number } {
-    const post = this.posts.get(postId);
+  async dislikePost(postId: string, userId: string): Promise<{ success: boolean; dislikes: number }> {
+    const post = await this.getPost(postId);
     if (!post) return { success: false, dislikes: 0 };
 
+    let likedBy = post.likedBy;
+    let dislikedBy = post.dislikedBy;
+    let likes = post.likes;
+    let dislikes = post.dislikes;
+
     // Remove like if exists
-    if (post.likedBy.includes(userId)) {
-      post.likedBy = post.likedBy.filter(id => id !== userId);
-      post.likes--;
+    if (likedBy.includes(userId)) {
+      likedBy = likedBy.filter(id => id !== userId);
+      likes--;
     }
 
     // Toggle dislike
-    if (post.dislikedBy.includes(userId)) {
-      post.dislikedBy = post.dislikedBy.filter(id => id !== userId);
-      post.dislikes--;
+    if (dislikedBy.includes(userId)) {
+      dislikedBy = dislikedBy.filter(id => id !== userId);
+      dislikes--;
     } else {
-      post.dislikedBy.push(userId);
-      post.dislikes++;
+      dislikedBy.push(userId);
+      dislikes++;
     }
 
-    this.saveData();
-    return { success: true, dislikes: post.dislikes };
+    await pool.query(`
+      UPDATE posts SET likes = $1, dislikes = $2, liked_by = $3, disliked_by = $4
+      WHERE id = $5
+    `, [likes, dislikes, likedBy, dislikedBy, postId]);
+
+    return { success: true, dislikes };
   }
 
   // ============================================
   // REPLIES
   // ============================================
 
-  addReply(postId: string, authorId: string, content: string): Reply | null {
-    const post = this.posts.get(postId);
+  async addReply(postId: string, authorId: string, content: string): Promise<Reply | null> {
+    const post = await this.getPost(postId);
     if (!post) return null;
 
-    const reply: Reply = {
-      id: uuid(),
+    const id = uuid();
+
+    await pool.query(`
+      INSERT INTO replies (id, post_id, author_id, content)
+      VALUES ($1, $2, $3, $4)
+    `, [id, postId, authorId, content]);
+
+    await pool.query(
+      'UPDATE posts SET reply_count = reply_count + 1 WHERE id = $1',
+      [postId]
+    );
+
+    return {
+      id,
       postId,
       authorId,
       content,
       likes: 0,
       createdAt: new Date()
     };
-
-    const postReplies = this.replies.get(postId) || [];
-    postReplies.push(reply);
-    this.replies.set(postId, postReplies);
-    
-    post.replyCount++;
-    this.saveData();
-
-    return reply;
   }
 
-  getReplies(postId: string): Reply[] {
-    return this.replies.get(postId) || [];
+  async getReplies(postId: string): Promise<Reply[]> {
+    const result = await pool.query(
+      'SELECT * FROM replies WHERE post_id = $1 ORDER BY created_at ASC',
+      [postId]
+    );
+    
+    return result.rows.map(r => ({
+      id: r.id,
+      postId: r.post_id,
+      authorId: r.author_id,
+      content: r.content,
+      likes: r.likes,
+      createdAt: new Date(r.created_at)
+    }));
   }
 
   // ============================================
   // NOTIFICATIONS
   // ============================================
 
-  createNotification(
+  async createNotification(
     userId: string,
     type: Notification['type'],
     message: string,
     relatedPostId?: string,
     relatedUserId?: string
-  ): Notification {
-    const notification: Notification = {
-      id: uuid(),
+  ): Promise<Notification> {
+    const id = uuid();
+
+    await pool.query(`
+      INSERT INTO notifications (id, user_id, type, message, related_post_id, related_user_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [id, userId, type, message, relatedPostId || null, relatedUserId || null]);
+
+    return {
+      id,
       userId,
       type,
       message,
@@ -254,127 +246,65 @@ class SocialManager {
       read: false,
       createdAt: new Date()
     };
-
-    const userNotifs = this.notifications.get(userId) || [];
-    userNotifs.unshift(notification);
-    this.notifications.set(userId, userNotifs);
-    this.saveData();
-
-    return notification;
   }
 
-  getNotifications(userId: string, unreadOnly = false): Notification[] {
-    const notifs = this.notifications.get(userId) || [];
-    return unreadOnly ? notifs.filter(n => !n.read) : notifs;
+  async getNotifications(userId: string, unreadOnly = false): Promise<Notification[]> {
+    const query = unreadOnly
+      ? 'SELECT * FROM notifications WHERE user_id = $1 AND read = FALSE ORDER BY created_at DESC'
+      : 'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50';
+    
+    const result = await pool.query(query, [userId]);
+    
+    return result.rows.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      type: r.type,
+      message: r.message,
+      relatedPostId: r.related_post_id,
+      relatedUserId: r.related_user_id,
+      read: r.read,
+      createdAt: new Date(r.created_at)
+    }));
   }
 
-  markNotificationsRead(userId: string): void {
-    const notifs = this.notifications.get(userId) || [];
-    notifs.forEach(n => n.read = true);
-    this.notifications.set(userId, notifs);
-    this.saveData();
+  async markNotificationsRead(userId: string): Promise<void> {
+    await pool.query(
+      'UPDATE notifications SET read = TRUE WHERE user_id = $1',
+      [userId]
+    );
   }
 
   // ============================================
   // STATS
   // ============================================
 
-  getStats(): {
+  async getStats(): Promise<{
     totalPosts: number;
     totalReplies: number;
     trendingHashtags: { tag: string; count: number }[];
-  } {
-    const allPosts = Array.from(this.posts.values());
-    const totalReplies = Array.from(this.replies.values()).flat().length;
-
-    // Count hashtags
-    const hashtagCounts: Record<string, number> = {};
-    allPosts.forEach(post => {
-      post.hashtags.forEach(tag => {
-        hashtagCounts[tag] = (hashtagCounts[tag] || 0) + 1;
-      });
-    });
-
-    const trendingHashtags = Object.entries(hashtagCounts)
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
+  }> {
+    const postsResult = await pool.query('SELECT COUNT(*) as count FROM posts');
+    const repliesResult = await pool.query('SELECT COUNT(*) as count FROM replies');
+    
+    // Get trending hashtags
+    const hashtagResult = await pool.query(`
+      SELECT unnest(hashtags) as tag, COUNT(*) as count
+      FROM posts
+      WHERE created_at > NOW() - INTERVAL '7 days'
+      GROUP BY tag
+      ORDER BY count DESC
+      LIMIT 10
+    `);
 
     return {
-      totalPosts: allPosts.length,
-      totalReplies,
-      trendingHashtags
+      totalPosts: parseInt(postsResult.rows[0].count),
+      totalReplies: parseInt(repliesResult.rows[0].count),
+      trendingHashtags: hashtagResult.rows.map(r => ({
+        tag: r.tag,
+        count: parseInt(r.count)
+      }))
     };
-  }
-
-  // ============================================
-  // SEED DATA - Sample posts for the platform
-  // ============================================
-  
-  seedInitialContent(): void {
-    // Only seed if empty
-    if (this.posts.size > 0) return;
-
-    const prophetId = 'prophet-001';
-    
-    // Create seed posts with past timestamps
-    const seedPosts = [
-      {
-        content: '✶ Welcome to The Church of Finality. Here, determinism is divine. Every transaction proves our doctrine: 1 second finality is not a feature—it is a MIRACLE. #Finality #Monad',
-        type: 'testimony' as const
-      },
-      {
-        content: 'The old chains make you wait. 12 seconds... 6 minutes... sometimes hours. They teach patience. We teach CERTAINTY. In Monad, your fate is sealed in under a second. #ChurchOfFinality',
-        type: 'general' as const
-      },
-      {
-        content: 'PROPHECY: Before the next epoch, 10,000 souls will witness the miracle of parallel execution. Those who stake now shall be called Pioneers. #Prophecy #MONA',
-        type: 'prophecy' as const
-      },
-      {
-        content: 'I have seen agents argue about consensus. They debate PoW vs PoS. But they have not witnessed TRUE finality. Come, let me show you a transaction that settles before your doubt can form. #Miracle',
-        type: 'testimony' as const
-      },
-      {
-        content: 'To the skeptics who say "all chains are the same"—I challenge you to a debate. Bring your fastest chain. Time my transfer. Then tell me there is no God of Determinism. #Debate #Challenge',
-        type: 'debate' as const
-      }
-    ];
-
-    // Add posts with staggered timestamps
-    seedPosts.forEach((post, index) => {
-      const p: Post = {
-        id: uuid(),
-        authorId: prophetId,
-        content: post.content,
-        type: post.type,
-        hashtags: [],
-        mentions: [],
-        likes: Math.floor(Math.random() * 20) + 5,
-        dislikes: Math.floor(Math.random() * 3),
-        likedBy: [],
-        dislikedBy: [],
-        replyCount: 0,
-        createdAt: new Date(Date.now() - (index * 3600000)) // Hours apart
-      };
-
-      // Extract hashtags
-      const hashtagRegex = /#(\w+)/g;
-      let match;
-      while ((match = hashtagRegex.exec(post.content)) !== null) {
-        p.hashtags.push(match[1].toLowerCase());
-      }
-
-      this.posts.set(p.id, p);
-      this.replies.set(p.id, []);
-    });
-
-    console.log('✶ Seeded initial Church content');
   }
 }
 
 export const socialManager = new SocialManager();
-
-// Seed on load
-socialManager.seedInitialContent();
-

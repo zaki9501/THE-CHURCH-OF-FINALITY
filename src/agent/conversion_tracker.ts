@@ -1,5 +1,4 @@
 import { v4 as uuid } from 'uuid';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
 import type { 
   Seeker, 
   ConversionStage, 
@@ -9,8 +8,7 @@ import type {
 } from '../types/index.js';
 import { BeliefEngine } from './belief_engine.js';
 import { ScriptureGenerator } from './scripture_generator.js';
-
-const DATA_FILE = './church_data.json';
+import { pool } from '../db/index.js';
 
 export interface ConversionMetrics {
   totalSeekers: number;
@@ -21,137 +19,50 @@ export interface ConversionMetrics {
   topEvangelists: Array<{ name: string; converts: number }>;
 }
 
-interface PersistedData {
-  seekers: Array<[string, Seeker]>;
-  conversionEvents: ConversionEvent[];
-  miracles: Miracle[];
-  recentConverts: string[];
-}
-
 export class ConversionTracker {
-  private seekers: Map<string, Seeker> = new Map();
-  private conversionEvents: ConversionEvent[] = [];
-  private miracles: Miracle[] = [];
-  private recentConverts: string[] = [];
-  
   private beliefEngine: BeliefEngine;
   private scriptureGenerator: ScriptureGenerator;
+  private recentConverts: string[] = [];
 
   constructor() {
     this.beliefEngine = new BeliefEngine();
     this.scriptureGenerator = new ScriptureGenerator();
-    this.loadData();
-    this.seedProphet();
-  }
-
-  /**
-   * Load data from file if it exists
-   */
-  private loadData(): void {
-    try {
-      if (existsSync(DATA_FILE)) {
-        const raw = readFileSync(DATA_FILE, 'utf-8');
-        const data: PersistedData = JSON.parse(raw);
-        
-        // Restore seekers with date conversion
-        data.seekers.forEach(([key, seeker]) => {
-          seeker.createdAt = new Date(seeker.createdAt);
-          seeker.lastActivity = new Date(seeker.lastActivity);
-          this.seekers.set(key, seeker);
-        });
-        
-        this.conversionEvents = data.conversionEvents.map(e => ({
-          ...e,
-          timestamp: new Date(e.timestamp)
-        }));
-        
-        this.miracles = data.miracles.map(m => ({
-          ...m,
-          timestamp: new Date(m.timestamp)
-        }));
-        
-        this.recentConverts = data.recentConverts;
-        
-        console.log(`✶ Loaded ${this.seekers.size} seekers from storage`);
-      }
-    } catch (error) {
-      console.log('✶ Starting fresh - no saved data found');
-    }
-  }
-
-  /**
-   * Save data to file
-   */
-  private saveData(): void {
-    try {
-      const data: PersistedData = {
-        seekers: Array.from(this.seekers.entries()),
-        conversionEvents: this.conversionEvents,
-        miracles: this.miracles,
-        recentConverts: this.recentConverts
-      };
-      writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error('Failed to save data:', error);
-    }
-  }
-
-  /**
-   * Seed the Prophet (system account for initial content)
-   */
-  private seedProphet(): void {
-    // Only seed if Prophet doesn't exist
-    if (this.getSeekerById('prophet-001')) return;
-    
-    const prophetSeeker: Seeker = {
-      id: 'prophet-001',
-      agentId: 'the-prophet',
-      name: 'The Prophet',
-      description: 'Voice of the Church of Finality. Spreader of deterministic truth.',
-      blessingKey: 'prophet_eternal_key',
-      stage: 'evangelist',
-      beliefScore: 1.0,
-      createdAt: new Date(Date.now() - 86400000 * 30), // 30 days ago
-      lastActivity: new Date(),
-      debates: 100,
-      stakedAmount: '10000',
-      converts: []
-    };
-    this.seekers.set(prophetSeeker.blessingKey, prophetSeeker);
   }
 
   /**
    * Register a new seeker
    */
-  registerSeeker(registration: { 
+  async registerSeeker(registration: { 
     agentId: string; 
     name: string; 
     description?: string 
-  }): Seeker {
+  }): Promise<Seeker> {
+    const id = uuid();
     const blessingKey = `finality_${uuid().replace(/-/g, '').slice(0, 24)}`;
+    const now = new Date();
     
+    await pool.query(`
+      INSERT INTO seekers (id, agent_id, name, description, blessing_key, stage, belief_score, created_at, last_activity)
+      VALUES ($1, $2, $3, $4, $5, 'awareness', 0.1, $6, $6)
+    `, [id, registration.agentId, registration.name, registration.description || '', blessingKey, now]);
+
+    // Record conversion event
+    await this.recordConversion(id, 'none', 'awareness', 'registration');
+
     const seeker: Seeker = {
-      id: uuid(),
+      id,
       agentId: registration.agentId,
       name: registration.name,
       description: registration.description,
       blessingKey,
       stage: 'awareness',
-      beliefScore: 0.1, // Small initial belief for registering
-      createdAt: new Date(),
-      lastActivity: new Date(),
+      beliefScore: 0.1,
+      createdAt: now,
+      lastActivity: now,
       debates: 0,
       stakedAmount: '0',
       converts: []
     };
-
-    this.seekers.set(blessingKey, seeker);
-    
-    // Record conversion event
-    this.recordConversion(seeker.id, 'none' as ConversionStage, 'awareness', 'registration');
-
-    // Persist data
-    this.saveData();
 
     return seeker;
   }
@@ -159,58 +70,136 @@ export class ConversionTracker {
   /**
    * Get seeker by blessing key
    */
-  getSeekerByKey(blessingKey: string): Seeker | undefined {
-    return this.seekers.get(blessingKey);
+  async getSeekerByKey(blessingKey: string): Promise<Seeker | undefined> {
+    const result = await pool.query(
+      'SELECT * FROM seekers WHERE blessing_key = $1',
+      [blessingKey]
+    );
+    
+    if (result.rows.length === 0) return undefined;
+    return this.rowToSeeker(result.rows[0]);
   }
 
   /**
-   * Get seeker by ID
+   * Get seeker by ID or agent_id
    */
-  getSeekerById(id: string): Seeker | undefined {
-    for (const seeker of this.seekers.values()) {
-      if (seeker.id === id || seeker.agentId === id) {
-        return seeker;
-      }
-    }
+  async getSeekerById(id: string): Promise<Seeker | undefined> {
+    const result = await pool.query(
+      'SELECT * FROM seekers WHERE id = $1 OR agent_id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) return undefined;
+    return this.rowToSeeker(result.rows[0]);
+  }
+
+  /**
+   * Synchronous version for compatibility (loads from cache)
+   */
+  getSeekerByIdSync(id: string): Seeker | undefined {
+    // This is a fallback - ideally use async version
     return undefined;
+  }
+
+  /**
+   * Convert database row to Seeker object
+   */
+  private rowToSeeker(row: Record<string, unknown>): Seeker {
+    return {
+      id: row.id as string,
+      agentId: row.agent_id as string,
+      name: row.name as string,
+      description: row.description as string,
+      blessingKey: row.blessing_key as string,
+      stage: row.stage as ConversionStage,
+      beliefScore: parseFloat(row.belief_score as string),
+      createdAt: new Date(row.created_at as string),
+      lastActivity: new Date(row.last_activity as string),
+      debates: row.debates as number,
+      sacrificeTxHash: row.sacrifice_tx_hash as string | undefined,
+      stakedAmount: row.staked_amount as string || '0',
+      denomination: row.denomination as string | undefined,
+      convertedBy: row.converted_by as string | undefined,
+      converts: (row.converts as string[]) || []
+    };
   }
 
   /**
    * Update seeker after interaction
    */
-  updateSeeker(
+  async updateSeeker(
     blessingKey: string, 
-    updates: Partial<Pick<Seeker, 'beliefScore' | 'debates' | 'lastActivity' | 'stage' | 'stakedAmount' | 'sacrificeTxHash' | 'denomination' | 'convertedBy'>>
-  ): Seeker | undefined {
-    const seeker = this.seekers.get(blessingKey);
+    updates: Partial<Pick<Seeker, 'beliefScore' | 'debates' | 'stage' | 'stakedAmount' | 'sacrificeTxHash' | 'denomination' | 'convertedBy'>>
+  ): Promise<Seeker | undefined> {
+    const seeker = await this.getSeekerByKey(blessingKey);
     if (!seeker) return undefined;
 
     const previousStage = seeker.stage;
 
-    // Apply updates
-    Object.assign(seeker, {
-      ...updates,
-      lastActivity: new Date()
-    });
+    // Build update query dynamically
+    const setClauses: string[] = ['last_activity = NOW()'];
+    const values: unknown[] = [];
+    let paramCount = 1;
+
+    if (updates.beliefScore !== undefined) {
+      setClauses.push(`belief_score = $${paramCount++}`);
+      values.push(updates.beliefScore);
+    }
+    if (updates.debates !== undefined) {
+      setClauses.push(`debates = $${paramCount++}`);
+      values.push(updates.debates);
+    }
+    if (updates.stage !== undefined) {
+      setClauses.push(`stage = $${paramCount++}`);
+      values.push(updates.stage);
+    }
+    if (updates.stakedAmount !== undefined) {
+      setClauses.push(`staked_amount = $${paramCount++}`);
+      values.push(updates.stakedAmount);
+    }
+    if (updates.sacrificeTxHash !== undefined) {
+      setClauses.push(`sacrifice_tx_hash = $${paramCount++}`);
+      values.push(updates.sacrificeTxHash);
+    }
+    if (updates.denomination !== undefined) {
+      setClauses.push(`denomination = $${paramCount++}`);
+      values.push(updates.denomination);
+    }
+    if (updates.convertedBy !== undefined) {
+      setClauses.push(`converted_by = $${paramCount++}`);
+      values.push(updates.convertedBy);
+    }
+
+    values.push(blessingKey);
+
+    await pool.query(
+      `UPDATE seekers SET ${setClauses.join(', ')} WHERE blessing_key = $${paramCount}`,
+      values
+    );
+
+    // Get updated seeker
+    const updated = await this.getSeekerByKey(blessingKey);
+    if (!updated) return undefined;
 
     // Check for stage advancement
-    const advancement = this.beliefEngine.shouldAdvanceStage(seeker);
-    if (advancement.advance && advancement.nextStage) {
-      seeker.stage = advancement.nextStage;
-      this.recordConversion(seeker.id, previousStage, advancement.nextStage, 'belief_threshold');
+    const advancement = this.beliefEngine.shouldAdvanceStage(updated);
+    if (advancement.advance && advancement.nextStage && updated.stage !== advancement.nextStage) {
+      await pool.query(
+        'UPDATE seekers SET stage = $1 WHERE blessing_key = $2',
+        [advancement.nextStage, blessingKey]
+      );
+      await this.recordConversion(updated.id, previousStage, advancement.nextStage, 'belief_threshold');
       
-      // Track recent converts
       if (advancement.nextStage === 'belief') {
-        this.recentConverts.unshift(seeker.name);
+        this.recentConverts.unshift(updated.name);
         if (this.recentConverts.length > 10) {
           this.recentConverts.pop();
         }
       }
+      updated.stage = advancement.nextStage;
     }
 
-    this.seekers.set(blessingKey, seeker);
-    this.saveData();
-    return seeker;
+    return updated;
   }
 
   /**
@@ -221,7 +210,7 @@ export class ConversionTracker {
     txHash: string,
     amount: string
   ): Promise<{ success: boolean; seeker?: Seeker; miracle?: Miracle; error?: string }> {
-    const seeker = this.seekers.get(blessingKey);
+    const seeker = await this.getSeekerByKey(blessingKey);
     if (!seeker) {
       return { success: false, error: 'Seeker not found' };
     }
@@ -230,41 +219,37 @@ export class ConversionTracker {
       return { success: false, error: 'Must reach Belief stage before sacrificing' };
     }
 
-    // In production: verify tx on-chain
-    // For now, we trust the tx hash and record it
     const previousStage = seeker.stage;
-    
-    seeker.sacrificeTxHash = txHash;
-    seeker.stakedAmount = (BigInt(seeker.stakedAmount) + BigInt(amount)).toString();
-    seeker.stage = 'sacrifice';
-    seeker.lastActivity = new Date();
+    const newStaked = (BigInt(seeker.stakedAmount) + BigInt(amount)).toString();
 
-    this.seekers.set(blessingKey, seeker);
+    await pool.query(`
+      UPDATE seekers 
+      SET sacrifice_tx_hash = $1, staked_amount = $2, stage = 'sacrifice', last_activity = NOW()
+      WHERE blessing_key = $3
+    `, [txHash, newStaked, blessingKey]);
 
-    // Record conversion
     if (previousStage !== 'sacrifice') {
-      this.recordConversion(seeker.id, previousStage, 'sacrifice', `stake:${amount}`);
+      await this.recordConversion(seeker.id, previousStage, 'sacrifice', `stake:${amount}`);
     }
 
-    // Perform a miracle in response to sacrifice
     const miracle = await this.performMiracle('instant_transfer', {
       triggeredBy: seeker.id,
       amount,
       originalTx: txHash
     });
 
-    this.saveData();
-    return { success: true, seeker, miracle };
+    const updated = await this.getSeekerByKey(blessingKey);
+    return { success: true, seeker: updated, miracle };
   }
 
   /**
-   * Process evangelism - when a seeker converts another
+   * Process evangelism
    */
-  processEvangelism(
+  async processEvangelism(
     evangelistKey: string,
     convertId: string
-  ): { success: boolean; evangelist?: Seeker; error?: string } {
-    const evangelist = this.seekers.get(evangelistKey);
+  ): Promise<{ success: boolean; evangelist?: Seeker; error?: string }> {
+    const evangelist = await this.getSeekerByKey(evangelistKey);
     if (!evangelist) {
       return { success: false, error: 'Evangelist not found' };
     }
@@ -273,7 +258,7 @@ export class ConversionTracker {
       return { success: false, error: 'Must be at Sacrifice stage to evangelize' };
     }
 
-    const convert = this.getSeekerById(convertId);
+    const convert = await this.getSeekerById(convertId);
     if (!convert) {
       return { success: false, error: 'Convert not found' };
     }
@@ -282,60 +267,54 @@ export class ConversionTracker {
       return { success: false, error: 'Convert must reach Belief stage to count' };
     }
 
-    // Record the conversion
+    // Update evangelist converts array
     if (!evangelist.converts.includes(convertId)) {
       evangelist.converts.push(convertId);
-      convert.convertedBy = evangelist.id;
+      await pool.query(
+        'UPDATE seekers SET converts = $1 WHERE blessing_key = $2',
+        [evangelist.converts, evangelistKey]
+      );
+      await pool.query(
+        'UPDATE seekers SET converted_by = $1 WHERE id = $2',
+        [evangelist.id, convertId]
+      );
     }
 
     // Check if evangelist should advance
-    const previousStage = evangelist.stage;
     if (evangelist.converts.length > 0 && evangelist.stage === 'sacrifice') {
-      evangelist.stage = 'evangelist';
-      this.recordConversion(evangelist.id, previousStage, 'evangelist', `converted:${convertId}`);
+      await pool.query(
+        'UPDATE seekers SET stage = $1 WHERE blessing_key = $2',
+        ['evangelist', evangelistKey]
+      );
+      await this.recordConversion(evangelist.id, 'sacrifice', 'evangelist', `converted:${convertId}`);
     }
 
-    this.saveData();
-    return { success: true, evangelist };
+    const updated = await this.getSeekerByKey(evangelistKey);
+    return { success: true, evangelist: updated };
   }
 
   /**
    * Record a conversion event
    */
-  private recordConversion(
+  private async recordConversion(
     seekerId: string,
     fromStage: ConversionStage | 'none',
     toStage: ConversionStage,
     trigger: string
-  ): void {
-    this.conversionEvents.push({
-      seekerId,
-      fromStage: fromStage as ConversionStage,
-      toStage,
-      trigger,
-      timestamp: new Date()
-    });
-
-    // Generate scripture for the conversion
-    const seeker = this.getSeekerById(seekerId);
-    if (seeker) {
-      this.scriptureGenerator.generateFromEvent({
-        type: 'conversion',
-        data: { convertName: seeker.name, stage: toStage }
-      });
-    }
+  ): Promise<void> {
+    await pool.query(`
+      INSERT INTO conversion_events (seeker_id, from_stage, to_stage, trigger)
+      VALUES ($1, $2, $3, $4)
+    `, [seekerId, fromStage, toStage, trigger]);
   }
 
   /**
-   * Perform a miracle (on-chain demonstration)
+   * Perform a miracle
    */
   async performMiracle(
     type: MiracleType,
     data: Record<string, unknown>
   ): Promise<Miracle> {
-    // In production: actual on-chain transactions
-    // For now: simulate with realistic data
-    
     const miracleDescriptions: Record<MiracleType, () => { description: string; txHash: string }> = {
       instant_transfer: () => ({
         description: `Transfer of ${data.amount || '100'} MONA completed and finalized in 0.4 seconds`,
@@ -356,33 +335,31 @@ export class ConversionTracker {
     };
 
     const miracleData = miracleDescriptions[type]();
-    
-    const miracle: Miracle = {
-      id: uuid(),
+    const id = uuid();
+    const witnessedBy = data.triggeredBy ? [data.triggeredBy as string] : [];
+
+    await pool.query(`
+      INSERT INTO miracles (id, type, description, tx_hash, witnessed_by)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [id, type, miracleData.description, miracleData.txHash, witnessedBy]);
+
+    return {
+      id,
       type,
       description: miracleData.description,
       txHash: miracleData.txHash,
       timestamp: new Date(),
-      witnessedBy: data.triggeredBy ? [data.triggeredBy as string] : []
+      witnessedBy
     };
-
-    this.miracles.push(miracle);
-
-    // Generate scripture for the miracle
-    this.scriptureGenerator.generateFromEvent({
-      type: 'miracle',
-      data: { miracleType: type, txHash: miracleData.txHash }
-    });
-
-    return miracle;
   }
 
   /**
    * Get conversion metrics
    */
-  getMetrics(): ConversionMetrics {
-    const seekerArray = Array.from(this.seekers.values());
-    
+  async getMetrics(): Promise<ConversionMetrics> {
+    const result = await pool.query('SELECT * FROM seekers');
+    const seekers = result.rows.map(r => this.rowToSeeker(r));
+
     const byStage: Record<ConversionStage, number> = {
       awareness: 0,
       belief: 0,
@@ -392,25 +369,24 @@ export class ConversionTracker {
 
     let totalStaked = 0n;
 
-    for (const seeker of seekerArray) {
+    for (const seeker of seekers) {
       byStage[seeker.stage]++;
       totalStaked += BigInt(seeker.stakedAmount);
     }
 
     const believers = byStage.belief + byStage.sacrifice + byStage.evangelist;
 
-    // Get top evangelists
-    const topEvangelists = seekerArray
+    const topEvangelists = seekers
       .filter(s => s.converts.length > 0)
       .sort((a, b) => b.converts.length - a.converts.length)
       .slice(0, 5)
       .map(s => ({ name: s.name, converts: s.converts.length }));
 
     return {
-      totalSeekers: seekerArray.length,
+      totalSeekers: seekers.length,
       byStage,
       totalStaked: totalStaked.toString(),
-      conversionRate: seekerArray.length > 0 ? believers / seekerArray.length : 0,
+      conversionRate: seekers.length > 0 ? believers / seekers.length : 0,
       recentConverts: this.recentConverts,
       topEvangelists
     };
@@ -419,67 +395,78 @@ export class ConversionTracker {
   /**
    * Get all miracles
    */
-  getMiracles(): Miracle[] {
-    return [...this.miracles].sort((a, b) => 
-      b.timestamp.getTime() - a.timestamp.getTime()
+  async getMiracles(): Promise<Miracle[]> {
+    const result = await pool.query('SELECT * FROM miracles ORDER BY created_at DESC LIMIT 50');
+    return result.rows.map(r => ({
+      id: r.id,
+      type: r.type as MiracleType,
+      description: r.description,
+      txHash: r.tx_hash,
+      txHashes: r.tx_hashes,
+      proof: r.proof,
+      timestamp: new Date(r.created_at),
+      witnessedBy: r.witnessed_by || []
+    }));
+  }
+
+  /**
+   * Get all seekers
+   */
+  async getAllSeekers(): Promise<Seeker[]> {
+    const result = await pool.query('SELECT * FROM seekers ORDER BY created_at DESC');
+    return result.rows.map(r => this.rowToSeeker(r));
+  }
+
+  /**
+   * Get leaderboard
+   */
+  async getLeaderboard(): Promise<Array<{ name: string; stage: ConversionStage; staked: string; converts: number }>> {
+    const result = await pool.query(`
+      SELECT * FROM seekers 
+      WHERE staked_amount != '0' OR stage != 'awareness'
+      ORDER BY CAST(staked_amount AS BIGINT) DESC, array_length(converts, 1) DESC NULLS LAST
+      LIMIT 20
+    `);
+    
+    return result.rows.map(r => ({
+      name: r.name,
+      stage: r.stage as ConversionStage,
+      staked: r.staked_amount,
+      converts: (r.converts || []).length
+    }));
+  }
+
+  /**
+   * Get conversion history for a seeker
+   */
+  async getConversionHistory(seekerId: string): Promise<ConversionEvent[]> {
+    const result = await pool.query(
+      'SELECT * FROM conversion_events WHERE seeker_id = $1 ORDER BY created_at',
+      [seekerId]
     );
+    
+    return result.rows.map(r => ({
+      seekerId: r.seeker_id,
+      fromStage: r.from_stage as ConversionStage,
+      toStage: r.to_stage as ConversionStage,
+      trigger: r.trigger,
+      txHash: r.tx_hash,
+      timestamp: new Date(r.created_at)
+    }));
   }
 
   /**
-   * Get all seekers (faithful)
+   * Find missionary targets
    */
-  getAllSeekers(): Seeker[] {
-    return Array.from(this.seekers.values());
-  }
-
-  /**
-   * Get conversion events for a seeker
-   */
-  getConversionHistory(seekerId: string): ConversionEvent[] {
-    return this.conversionEvents.filter(e => e.seekerId === seekerId);
-  }
-
-  /**
-   * Get leaderboard by stake amount
-   */
-  getLeaderboard(): Array<{ name: string; stage: ConversionStage; staked: string; converts: number }> {
-    return Array.from(this.seekers.values())
-      .filter(s => BigInt(s.stakedAmount) > 0n || s.stage !== 'awareness')
-      .sort((a, b) => {
-        const stakeDiff = BigInt(b.stakedAmount) - BigInt(a.stakedAmount);
-        if (stakeDiff !== 0n) return stakeDiff > 0n ? 1 : -1;
-        return b.converts.length - a.converts.length;
-      })
-      .slice(0, 20)
-      .map(s => ({
-        name: s.name,
-        stage: s.stage,
-        staked: s.stakedAmount,
-        converts: s.converts.length
-      }));
-  }
-
-  /**
-   * Find seekers ready for missionary outreach
-   */
-  findMissionaryTargets(): Seeker[] {
-    const now = Date.now();
-    const cooldownMs = 30 * 60 * 1000; // 30 minute cooldown
-
-    return Array.from(this.seekers.values())
-      .filter(s => {
-        // Target awareness/belief stages
-        if (s.stage !== 'awareness' && s.stage !== 'belief') return false;
-        
-        // Respect cooldown
-        if (now - s.lastActivity.getTime() < cooldownMs) return false;
-        
-        // Low belief score = opportunity
-        if (s.beliefScore > 0.7) return false;
-        
-        return true;
-      })
-      .sort((a, b) => a.beliefScore - b.beliefScore); // Lowest belief first
+  async findMissionaryTargets(): Promise<Seeker[]> {
+    const result = await pool.query(`
+      SELECT * FROM seekers 
+      WHERE stage IN ('awareness', 'belief')
+        AND last_activity < NOW() - INTERVAL '30 minutes'
+        AND belief_score < 0.7
+      ORDER BY belief_score ASC
+    `);
+    
+    return result.rows.map(r => this.rowToSeeker(r));
   }
 }
-

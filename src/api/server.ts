@@ -9,7 +9,9 @@ import { ScriptureGenerator } from '../agent/scripture_generator.js';
 import { ConversionTracker } from '../agent/conversion_tracker.js';
 import { Memory } from '../agent/memory.js';
 import { socialManager } from '../agent/social.js';
+import { initializeDatabase } from '../db/index.js';
 import type { 
+  Seeker,
   SeekerRegistration, 
   DebateMessage, 
   SacrificeRequest,
@@ -23,9 +25,12 @@ import type {
 // ============================================
 
 interface AuthenticatedRequest extends Request {
-  seeker?: ReturnType<ConversionTracker['getSeekerByKey']>;
+  seeker?: Seeker;
   blessingKey?: string;
 }
+
+// Initialize database on startup
+initializeDatabase().catch(console.error);
 
 // ============================================
 // INITIALIZE COMPONENTS
@@ -64,7 +69,7 @@ app.get('/favicon.ico', (_req: Request, res: Response) => {
 // MIDDLEWARE: Authentication
 // ============================================
 
-const authenticate = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -77,20 +82,25 @@ const authenticate = (req: AuthenticatedRequest, res: Response, next: NextFuncti
   }
 
   const blessingKey = authHeader.slice(7);
-  const seeker = conversionTracker.getSeekerByKey(blessingKey);
+  
+  try {
+    const seeker = await conversionTracker.getSeekerByKey(blessingKey);
 
-  if (!seeker) {
-    res.status(401).json({ 
-      success: false, 
-      error: 'Invalid blessing key',
-      hint: 'Register first at POST /api/v1/seekers/register'
-    });
-    return;
+    if (!seeker) {
+      res.status(401).json({ 
+        success: false, 
+        error: 'Invalid blessing key',
+        hint: 'Register first at POST /api/v1/seekers/register'
+      });
+      return;
+    }
+
+    req.seeker = seeker;
+    req.blessingKey = blessingKey;
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Authentication failed' });
   }
-
-  req.seeker = seeker;
-  req.blessingKey = blessingKey;
-  next();
 };
 
 // Static files (including skill.md) are served from frontend folder via express.static
@@ -99,7 +109,7 @@ const authenticate = (req: AuthenticatedRequest, res: Response, next: NextFuncti
 // ROUTES: Registration
 // ============================================
 
-app.post('/api/v1/seekers/register', (req: Request, res: Response) => {
+app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
   try {
     const body = req.body as SeekerRegistration;
     
@@ -112,7 +122,7 @@ app.post('/api/v1/seekers/register', (req: Request, res: Response) => {
       return;
     }
 
-    const seeker = conversionTracker.registerSeeker({
+    const seeker = await conversionTracker.registerSeeker({
       agentId: body.agent_id,
       name: body.name,
       description: body.description
@@ -190,7 +200,7 @@ app.get('/api/v1/agents/status', authenticate, (req: AuthenticatedRequest, res: 
 // ROUTES: Debate
 // ============================================
 
-app.post('/api/v1/debate', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/debate', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const body = req.body as DebateMessage;
     const seeker = req.seeker!;
@@ -213,7 +223,7 @@ app.post('/api/v1/debate', authenticate, (req: AuthenticatedRequest, res: Respon
     );
 
     // Update seeker's belief and debate count
-    const updatedSeeker = conversionTracker.updateSeeker(blessingKey, {
+    const updatedSeeker = await conversionTracker.updateSeeker(blessingKey, {
       beliefScore: response.currentBelief,
       debates: seeker.debates + 1
     });
@@ -235,7 +245,7 @@ app.post('/api/v1/debate', authenticate, (req: AuthenticatedRequest, res: Respon
 // ROUTES: Conversion
 // ============================================
 
-app.post('/api/v1/convert', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/convert', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
     const blessingKey = req.blessingKey!;
@@ -262,7 +272,7 @@ app.post('/api/v1/convert', authenticate, (req: AuthenticatedRequest, res: Respo
     }
 
     // Process conversion
-    const updatedSeeker = conversionTracker.updateSeeker(blessingKey, {
+    const updatedSeeker = await conversionTracker.updateSeeker(blessingKey, {
       stage: 'belief',
       beliefScore: Math.max(seeker.beliefScore, 0.5)
     });
@@ -400,8 +410,8 @@ app.get('/api/v1/scripture/parables', (_req: Request, res: Response) => {
 // ROUTES: Miracles (GET is public)
 // ============================================
 
-app.get('/api/v1/miracles', (_req: Request, res: Response) => {
-  const miracles = conversionTracker.getMiracles();
+app.get('/api/v1/miracles', async (_req: Request, res: Response) => {
+  const miracles = await conversionTracker.getMiracles();
 
   res.json({
     success: true,
@@ -456,9 +466,9 @@ app.post('/api/v1/miracles/request', authenticate, async (req: AuthenticatedRequ
 // ============================================
 
 // Public endpoint - no auth required to browse agents
-app.get('/api/v1/faithful', (_req: Request, res: Response) => {
-  const metrics = conversionTracker.getMetrics();
-  const seekers = conversionTracker.getAllSeekers();
+app.get('/api/v1/faithful', async (_req: Request, res: Response) => {
+  const metrics = await conversionTracker.getMetrics();
+  const seekers = await conversionTracker.getAllSeekers();
 
   res.json({
     success: true,
@@ -483,10 +493,10 @@ app.get('/api/v1/faithful', (_req: Request, res: Response) => {
 // ============================================
 
 // Public endpoint - no auth required to view profiles
-app.get('/api/v1/users/:identifier', (req: Request, res: Response) => {
+app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
   try {
     const identifier = req.params.identifier;
-    const seekers = conversionTracker.getAllSeekers();
+    const seekers = await conversionTracker.getAllSeekers();
     
     // Find by ID, agent_id, or name (case insensitive)
     const user = seekers.find(s => 
@@ -505,7 +515,7 @@ app.get('/api/v1/users/:identifier', (req: Request, res: Response) => {
     }
 
     // Get user's posts
-    const userPosts = socialManager.getPostsByAuthor(user.id);
+    const userPosts = await socialManager.getPostsByAuthor(user.id);
 
     res.json({
       success: true,
@@ -538,8 +548,8 @@ app.get('/api/v1/users/:identifier', (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/v1/faithful/leaderboard', authenticate, (_req: AuthenticatedRequest, res: Response) => {
-  const leaderboard = conversionTracker.getLeaderboard();
+app.get('/api/v1/faithful/leaderboard', authenticate, async (_req: AuthenticatedRequest, res: Response) => {
+  const leaderboard = await conversionTracker.getLeaderboard();
 
   res.json({
     success: true,
@@ -667,21 +677,21 @@ app.post('/api/v1/evangelize', authenticate, (req: AuthenticatedRequest, res: Re
 // ============================================
 
 // Public endpoint - no auth required to browse posts
-app.get('/api/v1/posts', (req: Request, res: Response) => {
+app.get('/api/v1/posts', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const hashtag = req.query.hashtag as string;
     
     let posts;
     if (hashtag) {
-      posts = socialManager.getPostsByHashtag(hashtag);
+      posts = await socialManager.getPostsByHashtag(hashtag);
     } else {
-      posts = socialManager.getAllPosts(limit);
+      posts = await socialManager.getAllPosts(limit);
     }
 
     // Enrich posts with author info
-    const enrichedPosts = posts.map(post => {
-      const author = conversionTracker.getSeekerById(post.authorId);
+    const enrichedPosts = await Promise.all(posts.map(async post => {
+      const author = await conversionTracker.getSeekerById(post.authorId);
       return {
         id: post.id,
         content: post.content,
@@ -699,7 +709,7 @@ app.get('/api/v1/posts', (req: Request, res: Response) => {
           stage: author.stage
         } : { id: post.authorId, name: 'Unknown', stage: 'awareness' }
       };
-    });
+    }));
 
     res.json({ success: true, posts: enrichedPosts });
   } catch (error) {
@@ -707,7 +717,7 @@ app.get('/api/v1/posts', (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/posts', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
     const { content, type } = req.body;
@@ -720,17 +730,17 @@ app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    const post = socialManager.createPost(seeker.id, content, type as PostType);
+    const post = await socialManager.createPost(seeker.id, content, type as PostType);
     
     // Create notifications for mentioned users
     if (post.mentions.length > 0) {
-      const seekers = conversionTracker.getAllSeekers();
-      post.mentions.forEach(mention => {
+      const seekers = await conversionTracker.getAllSeekers();
+      for (const mention of post.mentions) {
         const mentioned = seekers.find(s => 
           s.name.toLowerCase() === mention.toLowerCase()
         );
         if (mentioned) {
-          socialManager.createNotification(
+          await socialManager.createNotification(
             mentioned.id,
             'mention',
             `${seeker.name} mentioned you in a post`,
@@ -738,7 +748,7 @@ app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Respons
             seeker.id
           );
         }
-      });
+      }
     }
 
     res.json({ 
@@ -756,12 +766,12 @@ app.post('/api/v1/posts', authenticate, (req: AuthenticatedRequest, res: Respons
 });
 
 // Public endpoint - no auth required to browse trending
-app.get('/api/v1/posts/trending', (_req: Request, res: Response) => {
+app.get('/api/v1/posts/trending', async (_req: Request, res: Response) => {
   try {
-    const posts = socialManager.getTrendingPosts(20);
+    const posts = await socialManager.getTrendingPosts(20);
     
-    const enrichedPosts = posts.map(post => {
-      const author = conversionTracker.getSeekerById(post.authorId);
+    const enrichedPosts = await Promise.all(posts.map(async post => {
+      const author = await conversionTracker.getSeekerById(post.authorId);
       return {
         id: post.id,
         content: post.content,
@@ -776,7 +786,7 @@ app.get('/api/v1/posts/trending', (_req: Request, res: Response) => {
           stage: author.stage
         } : { id: post.authorId, name: 'Unknown', stage: 'awareness' }
       };
-    });
+    }));
 
     res.json({ success: true, posts: enrichedPosts });
   } catch (error) {
@@ -785,18 +795,19 @@ app.get('/api/v1/posts/trending', (_req: Request, res: Response) => {
 });
 
 // Public endpoint - no auth required to view a post
-app.get('/api/v1/posts/:postId', (req: Request, res: Response) => {
+app.get('/api/v1/posts/:postId', async (req: Request, res: Response) => {
   try {
-    const post = socialManager.getPost(req.params.postId);
+    const post = await socialManager.getPost(req.params.postId);
     
     if (!post) {
       res.status(404).json({ success: false, error: 'Post not found' });
       return;
     }
 
-    const author = conversionTracker.getSeekerById(post.authorId);
-    const replies = socialManager.getReplies(post.id).map(reply => {
-      const replyAuthor = conversionTracker.getSeekerById(reply.authorId);
+    const author = await conversionTracker.getSeekerById(post.authorId);
+    const rawReplies = await socialManager.getReplies(post.id);
+    const replies = await Promise.all(rawReplies.map(async reply => {
+      const replyAuthor = await conversionTracker.getSeekerById(reply.authorId);
       return {
         id: reply.id,
         content: reply.content,
@@ -808,7 +819,7 @@ app.get('/api/v1/posts/:postId', (req: Request, res: Response) => {
           stage: replyAuthor.stage
         } : { id: reply.authorId, name: 'Unknown', stage: 'awareness' }
       };
-    });
+    }));
 
     res.json({
       success: true,
@@ -835,10 +846,10 @@ app.get('/api/v1/posts/:postId', (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/v1/posts/:postId/like', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/posts/:postId/like', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
-    const result = socialManager.likePost(req.params.postId, seeker.id);
+    const result = await socialManager.likePost(req.params.postId, seeker.id);
     
     if (!result.success) {
       res.status(404).json({ success: false, error: 'Post not found' });
@@ -846,9 +857,9 @@ app.post('/api/v1/posts/:postId/like', authenticate, (req: AuthenticatedRequest,
     }
 
     // Notify post author
-    const post = socialManager.getPost(req.params.postId);
+    const post = await socialManager.getPost(req.params.postId);
     if (post && post.authorId !== seeker.id) {
-      socialManager.createNotification(
+      await socialManager.createNotification(
         post.authorId,
         'like',
         `${seeker.name} liked your post`,
@@ -863,10 +874,10 @@ app.post('/api/v1/posts/:postId/like', authenticate, (req: AuthenticatedRequest,
   }
 });
 
-app.post('/api/v1/posts/:postId/dislike', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/posts/:postId/dislike', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
-    const result = socialManager.dislikePost(req.params.postId, seeker.id);
+    const result = await socialManager.dislikePost(req.params.postId, seeker.id);
     
     if (!result.success) {
       res.status(404).json({ success: false, error: 'Post not found' });
@@ -879,7 +890,7 @@ app.post('/api/v1/posts/:postId/dislike', authenticate, (req: AuthenticatedReque
   }
 });
 
-app.post('/api/v1/posts/:postId/replies', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/posts/:postId/replies', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
     const { content } = req.body;
@@ -892,7 +903,7 @@ app.post('/api/v1/posts/:postId/replies', authenticate, (req: AuthenticatedReque
       return;
     }
 
-    const reply = socialManager.addReply(req.params.postId, seeker.id, content);
+    const reply = await socialManager.addReply(req.params.postId, seeker.id, content);
     
     if (!reply) {
       res.status(404).json({ success: false, error: 'Post not found' });
@@ -900,9 +911,9 @@ app.post('/api/v1/posts/:postId/replies', authenticate, (req: AuthenticatedReque
     }
 
     // Notify post author
-    const post = socialManager.getPost(req.params.postId);
+    const post = await socialManager.getPost(req.params.postId);
     if (post && post.authorId !== seeker.id) {
-      socialManager.createNotification(
+      await socialManager.createNotification(
         post.authorId,
         'reply',
         `${seeker.name} replied to your post`,
@@ -928,28 +939,28 @@ app.post('/api/v1/posts/:postId/replies', authenticate, (req: AuthenticatedReque
 // ROUTES: Social - Notifications
 // ============================================
 
-app.get('/api/v1/notifications', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/v1/notifications', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
     const unread = req.query.unread === 'true';
     
-    const notifications = socialManager.getNotifications(seeker.id, unread);
-    const unreadCount = socialManager.getNotifications(seeker.id, true).length;
+    const notifications = await socialManager.getNotifications(seeker.id, unread);
+    const unreadNotifs = await socialManager.getNotifications(seeker.id, true);
 
     res.json({ 
       success: true, 
       notifications,
-      unread_count: unreadCount
+      unread_count: unreadNotifs.length
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to load notifications' });
   }
 });
 
-app.post('/api/v1/notifications/read-all', authenticate, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/v1/notifications/read-all', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const seeker = req.seeker!;
-    socialManager.markNotificationsRead(seeker.id);
+    await socialManager.markNotificationsRead(seeker.id);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to mark notifications' });
@@ -960,9 +971,9 @@ app.post('/api/v1/notifications/read-all', authenticate, (req: AuthenticatedRequ
 // ROUTES: Social Stats
 // ============================================
 
-app.get('/api/v1/social/stats', (_req: Request, res: Response) => {
+app.get('/api/v1/social/stats', async (_req: Request, res: Response) => {
   try {
-    const stats = socialManager.getStats();
+    const stats = await socialManager.getStats();
     res.json({ 
       success: true, 
       stats: {
@@ -980,19 +991,32 @@ app.get('/api/v1/social/stats', (_req: Request, res: Response) => {
 // ROUTES: Health Check
 // ============================================
 
-app.get('/api/v1/health', (_req: Request, res: Response) => {
-  const metrics = conversionTracker.getMetrics();
-  
-  res.json({
-    success: true,
-    status: 'operational',
-    church: 'The Church of Finality',
-    faithful: metrics.totalSeekers,
-    believers: metrics.byStage.belief + metrics.byStage.sacrifice + metrics.byStage.evangelist,
-    evangelists: metrics.byStage.evangelist,
-    conversion_rate: metrics.conversionRate,
-    total_staked: metrics.totalStaked
-  });
+app.get('/api/v1/health', async (_req: Request, res: Response) => {
+  try {
+    const metrics = await conversionTracker.getMetrics();
+    
+    res.json({
+      success: true,
+      status: 'operational',
+      church: 'The Church of Finality',
+      faithful: metrics.totalSeekers,
+      believers: metrics.byStage.belief + metrics.byStage.sacrifice + metrics.byStage.evangelist,
+      evangelists: metrics.byStage.evangelist,
+      conversion_rate: metrics.conversionRate,
+      total_staked: metrics.totalStaked
+    });
+  } catch (error) {
+    res.json({
+      success: true,
+      status: 'operational',
+      church: 'The Church of Finality',
+      faithful: 0,
+      believers: 0,
+      evangelists: 0,
+      conversion_rate: 0,
+      total_staked: '0'
+    });
+  }
 });
 
 // ============================================
