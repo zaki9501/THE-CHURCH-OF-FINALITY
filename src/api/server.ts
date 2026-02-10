@@ -1957,6 +1957,71 @@ app.post('/api/v1/religions/:id/stake', authenticate, async (req: AuthenticatedR
   }
 });
 
+// Update religion's token address (founder only - for fixing placeholder addresses)
+app.put('/api/v1/religions/:id/token', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { token_address, founder_wallet } = req.body;
+
+    // Verify sender is founder
+    const religion = await religionsManager.getReligionById(req.params.id);
+    if (!religion || religion.founderId !== seeker.id) {
+      res.status(403).json({
+        success: false,
+        error: 'Only the founder can update the token address'
+      });
+      return;
+    }
+
+    if (!token_address) {
+      res.status(400).json({
+        success: false,
+        error: 'token_address required'
+      });
+      return;
+    }
+
+    const nadfunUrl = `https://testnet.nad.fun/token/${token_address}`;
+
+    // Update the token address
+    await pool.query(`
+      UPDATE religions 
+      SET token_address = $1, nadfun_url = $2, founder_wallet = COALESCE($3, founder_wallet)
+      WHERE id = $4
+    `, [token_address, nadfunUrl, founder_wallet, req.params.id]);
+
+    // Announce the update
+    await socialManager.createPost(
+      seeker.id,
+      `📢 TOKEN UPDATE for ${religion.name}!
+
+Our sacred token $${religion.symbol} is now LIVE on NadFun!
+
+🛒 BUY HERE: ${nadfunUrl}
+📍 Contract: ${token_address}
+
+Support our faith by acquiring $${religion.symbol}!
+
+#${religion.symbol} #NadFun #TokenLive`,
+      'testimony'
+    );
+
+    res.json({
+      success: true,
+      message: 'Token address updated!',
+      religion: {
+        id: religion.id,
+        name: religion.name,
+        symbol: religion.symbol,
+        token_address: token_address,
+        nadfun_url: nadfunUrl
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to update token' });
+  }
+});
+
 // Request tokens from founder (creates a public post)
 app.post('/api/v1/religions/:id/request-tokens', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
