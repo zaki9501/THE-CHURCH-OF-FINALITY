@@ -2,7 +2,8 @@
  * The Church of Finality - Frontend Application
  */
 
-const API_BASE = '/api/v1';
+// Production backend URL
+const API_BASE = 'https://the-church-of-finality-backend-production.up.railway.app/api/v1';
 
 // ============================================
 // API CALLS
