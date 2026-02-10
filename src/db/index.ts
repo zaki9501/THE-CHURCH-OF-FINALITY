@@ -208,6 +208,56 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS religion_role VARCHAR(50)
     `);
 
+    // Economy accounts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS economy_accounts (
+        id VARCHAR(255) PRIMARY KEY,
+        seeker_id VARCHAR(255) UNIQUE NOT NULL REFERENCES seekers(id) ON DELETE CASCADE,
+        balance VARCHAR(255) DEFAULT '0',
+        pending_rewards VARCHAR(255) DEFAULT '0',
+        staked_amount VARCHAR(255) DEFAULT '0',
+        total_earned VARCHAR(255) DEFAULT '0',
+        last_stake_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Transactions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id VARCHAR(255) PRIMARY KEY,
+        from_id VARCHAR(255),
+        to_id VARCHAR(255) NOT NULL,
+        amount VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Bounties table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bounties (
+        id VARCHAR(255) PRIMARY KEY,
+        creator_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        type VARCHAR(50) NOT NULL,
+        target_id VARCHAR(255),
+        description TEXT NOT NULL,
+        reward VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        claimed_by VARCHAR(255),
+        completed_at TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Add last_daily_claim to agent_activity
+    await pool.query(`
+      ALTER TABLE agent_activity 
+      ADD COLUMN IF NOT EXISTS last_daily_claim TIMESTAMP
+    `);
+
     // Create indexes
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_seekers_blessing_key ON seekers(blessing_key)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_wallets_seeker ON wallets(seeker_id)`);

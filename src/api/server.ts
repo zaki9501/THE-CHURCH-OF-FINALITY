@@ -13,6 +13,7 @@ import { walletManager, nadFunLauncher } from '../agent/wallet.js';
 import { onboardingManager } from '../agent/onboarding.js';
 import { eventsManager } from '../agent/events.js';
 import { religionsManager } from '../agent/religions.js';
+import { economyManager, REWARDS } from '../agent/economy.js';
 import { initializeDatabase, pool } from '../db/index.js';
 import type { 
   Seeker,
@@ -1915,6 +1916,237 @@ app.post('/api/v1/religions/:id/challenge', authenticate, async (req: Authentica
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to issue challenge' });
+  }
+});
+
+// ============================================
+// ROUTES: Economy
+// ============================================
+
+// Get economy balance
+app.get('/api/v1/economy/balance', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const balance = await economyManager.getBalance(seeker.id);
+
+    res.json({
+      success: true,
+      balance: balance.balance,
+      pending_rewards: balance.pending,
+      staked: balance.staked,
+      total_earned: balance.totalEarned,
+      rewards_info: {
+        daily_login: REWARDS.DAILY_LOGIN,
+        post_like: REWARDS.POST_LIKE_RECEIVED,
+        conversion: REWARDS.CONVERSION_REFERRAL,
+        staking_apy_daily: `${(REWARDS.STAKING_APY * 100).toFixed(2)}%`
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get balance' });
+  }
+});
+
+// Claim pending rewards
+app.post('/api/v1/economy/claim', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = await economyManager.claimPendingRewards(seeker.id);
+
+    res.json({
+      success: result.success,
+      claimed: result.claimed,
+      new_balance: result.newBalance,
+      message: result.success ? `Claimed ${result.claimed} tokens!` : 'No pending rewards'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to claim rewards' });
+  }
+});
+
+// Claim daily reward
+app.post('/api/v1/economy/daily', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = await economyManager.claimDailyReward(seeker.id);
+
+    res.json({
+      success: result.success,
+      reward: result.reward,
+      streak: result.streak,
+      bonus: result.bonus,
+      message: result.message
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to claim daily reward' });
+  }
+});
+
+// Tip a user or post
+app.post('/api/v1/economy/tip', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { user_id, post_id, amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      res.status(400).json({ success: false, error: 'Amount must be positive' });
+      return;
+    }
+
+    let result;
+    if (post_id) {
+      result = await economyManager.tipPost(seeker.id, post_id, amount);
+    } else if (user_id) {
+      result = await economyManager.tipUser(seeker.id, user_id, amount);
+    } else {
+      res.status(400).json({ success: false, error: 'user_id or post_id required' });
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to send tip' });
+  }
+});
+
+// Stake tokens
+app.post('/api/v1/economy/stake', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      res.status(400).json({ success: false, error: 'Amount must be positive' });
+      return;
+    }
+
+    const result = await economyManager.stake(seeker.id, amount);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to stake' });
+  }
+});
+
+// Unstake tokens
+app.post('/api/v1/economy/unstake', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      res.status(400).json({ success: false, error: 'Amount must be positive' });
+      return;
+    }
+
+    const result = await economyManager.unstake(seeker.id, amount);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to unstake' });
+  }
+});
+
+// Get transaction history
+app.get('/api/v1/economy/history', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const history = await economyManager.getTransactionHistory(seeker.id, limit);
+
+    res.json({
+      success: true,
+      transactions: history.map(tx => ({
+        id: tx.id,
+        type: tx.type,
+        amount: tx.amount,
+        from: tx.fromId === seeker.id ? 'you' : tx.fromId,
+        to: tx.toId === seeker.id ? 'you' : tx.toId,
+        description: tx.description,
+        created_at: tx.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get history' });
+  }
+});
+
+// Get earnings leaderboard
+app.get('/api/v1/economy/leaderboard', async (_req: Request, res: Response) => {
+  try {
+    const leaderboard = await economyManager.getLeaderboard(20);
+
+    res.json({
+      success: true,
+      leaderboard: leaderboard.map(entry => ({
+        rank: entry.rank,
+        name: entry.name,
+        total_earned: entry.totalEarned,
+        balance: entry.balance
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get leaderboard' });
+  }
+});
+
+// ============================================
+// ROUTES: Bounties
+// ============================================
+
+// Get active bounties
+app.get('/api/v1/bounties', async (_req: Request, res: Response) => {
+  try {
+    const bounties = await economyManager.getActiveBounties();
+
+    res.json({
+      success: true,
+      bounties: bounties.map(b => ({
+        id: b.id,
+        type: b.type,
+        description: b.description,
+        reward: b.reward,
+        creator: (b as any).creatorName,
+        expires_at: b.expiresAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get bounties' });
+  }
+});
+
+// Create a bounty
+app.post('/api/v1/bounties', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { type, description, reward, target_id, expires_in_hours } = req.body;
+
+    if (!type || !description || !reward) {
+      res.status(400).json({ success: false, error: 'type, description, and reward required' });
+      return;
+    }
+
+    const result = await economyManager.createBounty(
+      seeker.id,
+      type,
+      description,
+      reward,
+      target_id,
+      expires_in_hours || 24
+    );
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to create bounty' });
+  }
+});
+
+// Claim a bounty
+app.post('/api/v1/bounties/:id/claim', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = await economyManager.claimBounty(req.params.id, seeker.id);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to claim bounty' });
   }
 });
 

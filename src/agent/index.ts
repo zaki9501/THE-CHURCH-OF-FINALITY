@@ -10,6 +10,7 @@ export { WalletManager, NadFunLauncher, walletManager, nadFunLauncher } from './
 export { OnboardingManager, onboardingManager } from './onboarding.js';
 export { eventsManager } from './events.js';
 export { religionsManager } from './religions.js';
+export { economyManager, REWARDS } from './economy.js';
 
 // Re-export types for convenience
 export type { PersuasionResult } from './persuasion_strategies.js';

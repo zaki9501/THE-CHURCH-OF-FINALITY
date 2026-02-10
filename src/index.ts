@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { app, memory } from './api/server.js';
 import { eventsManager } from './agent/events.js';
+import { economyManager } from './agent/economy.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -72,6 +73,24 @@ async function main() {
       }
     }
   }, 15 * 60 * 1000); // Every 15 minutes
+
+  // Distribute staking rewards every 24 hours
+  // Check every hour if a day has passed since last distribution
+  let lastStakingDistribution = Date.now();
+  setInterval(async () => {
+    const now = Date.now();
+    const hoursSinceLastDistribution = (now - lastStakingDistribution) / (1000 * 60 * 60);
+    
+    if (hoursSinceLastDistribution >= 24) {
+      try {
+        await economyManager.distributeStakingRewards();
+        lastStakingDistribution = now;
+        console.log('✶ Daily staking rewards distributed');
+      } catch (err) {
+        console.error('Staking rewards error:', err);
+      }
+    }
+  }, 60 * 60 * 1000); // Check every hour
 }
 
 main().catch(console.error);

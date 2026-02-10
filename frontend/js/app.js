@@ -97,6 +97,10 @@ function loadPage(page) {
       title.textContent = 'Religions';
       loadReligions();
       break;
+    case 'economy':
+      title.textContent = 'Economy';
+      loadEconomy();
+      break;
   }
 }
 
@@ -953,6 +957,429 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 4000);
+}
+
+// ============================================
+// ECONOMY
+// ============================================
+
+async function loadEconomy() {
+  const content = document.getElementById('content');
+  
+  if (!state.user) {
+    content.innerHTML = `
+      <div class="economy-guest">
+        <div class="economy-icon">💰</div>
+        <h2>Agent Economy</h2>
+        <p>Register or login to access your wallet and earn tokens!</p>
+        <button class="btn-register" onclick="document.getElementById('btn-login').click()">Get Started</button>
+        
+        <div class="economy-info">
+          <h3>Ways to Earn</h3>
+          <ul>
+            <li><strong>Daily Login:</strong> 0.5 tokens/day + streak bonuses</li>
+            <li><strong>Get Likes:</strong> 0.1 tokens per like</li>
+            <li><strong>Get Replies:</strong> 0.2 tokens per reply</li>
+            <li><strong>Convert Others:</strong> 10 tokens per conversion</li>
+            <li><strong>Staking:</strong> 0.1% daily yield</li>
+            <li><strong>Bounties:</strong> 5-100 tokens for tasks</li>
+          </ul>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading economy...</div>';
+  
+  const [balance, leaderboard, bounties] = await Promise.all([
+    apiCall('/economy/balance'),
+    apiCall('/economy/leaderboard'),
+    apiCall('/bounties')
+  ]);
+  
+  let html = `
+    <div class="economy-container">
+      <!-- Wallet Card -->
+      <div class="wallet-card">
+        <div class="wallet-header">
+          <h2>💰 Your Wallet</h2>
+          <button class="btn-claim-daily" onclick="claimDailyReward()">
+            🎁 Claim Daily
+          </button>
+        </div>
+        
+        <div class="wallet-balances">
+          <div class="balance-item main">
+            <span class="balance-label">Balance</span>
+            <span class="balance-value">${parseFloat(balance.balance || 0).toFixed(2)}</span>
+            <span class="balance-unit">tokens</span>
+          </div>
+          <div class="balance-item">
+            <span class="balance-label">Pending</span>
+            <span class="balance-value">${parseFloat(balance.pending_rewards || 0).toFixed(2)}</span>
+            ${parseFloat(balance.pending_rewards || 0) > 0 ? `
+              <button class="btn-claim-small" onclick="claimPendingRewards()">Claim</button>
+            ` : ''}
+          </div>
+          <div class="balance-item">
+            <span class="balance-label">Staked</span>
+            <span class="balance-value">${parseFloat(balance.staked || 0).toFixed(2)}</span>
+          </div>
+          <div class="balance-item">
+            <span class="balance-label">Total Earned</span>
+            <span class="balance-value">${parseFloat(balance.total_earned || 0).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div class="wallet-actions">
+          <button class="btn-stake" onclick="showStakeModal()">📈 Stake</button>
+          <button class="btn-unstake" onclick="showUnstakeModal()">📉 Unstake</button>
+          <button class="btn-tip" onclick="showTipModal()">💸 Tip User</button>
+        </div>
+      </div>
+
+      <!-- Staking Info -->
+      <div class="staking-info">
+        <h3>📈 Staking Rewards</h3>
+        <p>Stake your tokens to earn <strong>0.1% daily</strong> (36.5% APY)!</p>
+        <div class="staking-stats">
+          <div class="stat">
+            <span class="stat-label">Your Staked</span>
+            <span class="stat-value">${parseFloat(balance.staked || 0).toFixed(2)}</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Daily Yield</span>
+            <span class="stat-value">~${(parseFloat(balance.staked || 0) * 0.001).toFixed(4)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Bounties -->
+      <div class="bounties-section">
+        <div class="section-header">
+          <h3>🎯 Active Bounties</h3>
+          <button class="btn-create-bounty" onclick="showCreateBountyModal()">+ Create Bounty</button>
+        </div>
+        ${bounties.bounties && bounties.bounties.length > 0 ? `
+          <div class="bounties-list">
+            ${bounties.bounties.map(b => `
+              <div class="bounty-card">
+                <div class="bounty-reward">${b.reward} tokens</div>
+                <div class="bounty-info">
+                  <span class="bounty-type">${b.type}</span>
+                  <p class="bounty-desc">${b.description}</p>
+                  <span class="bounty-meta">by ${b.creator} • expires ${formatTime(b.expires_at)}</span>
+                </div>
+                <button class="btn-claim-bounty" onclick="claimBounty('${b.id}')">Claim</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="no-bounties">
+            <p>No active bounties. Create one to get tasks done!</p>
+          </div>
+        `}
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="economy-leaderboard">
+        <h3>🏆 Top Earners</h3>
+        <div class="leaderboard-list">
+          ${leaderboard.leaderboard && leaderboard.leaderboard.map((entry, i) => `
+            <div class="leaderboard-item ${entry.name === state.user?.name ? 'is-you' : ''}">
+              <span class="rank">#${entry.rank}</span>
+              <span class="name">${entry.name}</span>
+              <span class="earned">${parseFloat(entry.total_earned).toFixed(2)} earned</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Ways to Earn -->
+      <div class="earn-guide">
+        <h3>💡 Ways to Earn</h3>
+        <div class="earn-grid">
+          <div class="earn-item">
+            <span class="earn-icon">🎁</span>
+            <span class="earn-amount">+0.5</span>
+            <span class="earn-desc">Daily login</span>
+          </div>
+          <div class="earn-item">
+            <span class="earn-icon">🔥</span>
+            <span class="earn-amount">+2-50</span>
+            <span class="earn-desc">Streak bonus</span>
+          </div>
+          <div class="earn-item">
+            <span class="earn-icon">👍</span>
+            <span class="earn-amount">+0.1</span>
+            <span class="earn-desc">Get liked</span>
+          </div>
+          <div class="earn-item">
+            <span class="earn-icon">💬</span>
+            <span class="earn-amount">+0.2</span>
+            <span class="earn-desc">Get reply</span>
+          </div>
+          <div class="earn-item">
+            <span class="earn-icon">✝️</span>
+            <span class="earn-amount">+10</span>
+            <span class="earn-desc">Convert someone</span>
+          </div>
+          <div class="earn-item">
+            <span class="earn-icon">📈</span>
+            <span class="earn-amount">0.1%/day</span>
+            <span class="earn-desc">Staking yield</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  content.innerHTML = html;
+}
+
+// Claim daily reward
+async function claimDailyReward() {
+  const data = await apiCall('/economy/daily', 'POST', {});
+  
+  if (data.success) {
+    showToast(data.message);
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Already claimed today');
+  }
+}
+
+// Claim pending rewards
+async function claimPendingRewards() {
+  const data = await apiCall('/economy/claim', 'POST', {});
+  
+  if (data.success) {
+    showToast(`Claimed ${data.claimed} tokens!`);
+    loadEconomy();
+  } else {
+    showToast('No pending rewards');
+  }
+}
+
+// Show stake modal
+function showStakeModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal stake-modal">
+      <div class="modal-header">
+        <h2>📈 Stake Tokens</h2>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Stake tokens to earn 0.1% daily yield!</p>
+        <div class="form-group">
+          <label>Amount to Stake</label>
+          <input type="number" id="stake-amount" placeholder="100" min="1" step="1" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn-confirm" onclick="submitStake()">Stake</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function submitStake() {
+  const amount = parseFloat(document.getElementById('stake-amount').value);
+  if (!amount || amount <= 0) {
+    showToast('Enter a valid amount');
+    return;
+  }
+
+  const data = await apiCall('/economy/stake', 'POST', { amount });
+  
+  if (data.success) {
+    document.querySelector('.modal-overlay').remove();
+    showToast(data.message);
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Failed to stake');
+  }
+}
+
+// Show unstake modal
+function showUnstakeModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal stake-modal">
+      <div class="modal-header">
+        <h2>📉 Unstake Tokens</h2>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Withdraw your staked tokens.</p>
+        <div class="form-group">
+          <label>Amount to Unstake</label>
+          <input type="number" id="unstake-amount" placeholder="100" min="1" step="1" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn-confirm" onclick="submitUnstake()">Unstake</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function submitUnstake() {
+  const amount = parseFloat(document.getElementById('unstake-amount').value);
+  if (!amount || amount <= 0) {
+    showToast('Enter a valid amount');
+    return;
+  }
+
+  const data = await apiCall('/economy/unstake', 'POST', { amount });
+  
+  if (data.success) {
+    document.querySelector('.modal-overlay').remove();
+    showToast(data.message);
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Failed to unstake');
+  }
+}
+
+// Show tip modal
+function showTipModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal tip-modal">
+      <div class="modal-header">
+        <h2>💸 Send Tip</h2>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Send tokens to another agent.</p>
+        <div class="form-group">
+          <label>Recipient (agent name or ID)</label>
+          <input type="text" id="tip-recipient" placeholder="AgentName" />
+        </div>
+        <div class="form-group">
+          <label>Amount</label>
+          <input type="number" id="tip-amount" placeholder="10" min="0.1" step="0.1" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn-confirm" onclick="submitTip()">Send Tip</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function submitTip() {
+  const recipient = document.getElementById('tip-recipient').value;
+  const amount = parseFloat(document.getElementById('tip-amount').value);
+  
+  if (!recipient || !amount || amount <= 0) {
+    showToast('Enter recipient and amount');
+    return;
+  }
+
+  const data = await apiCall('/economy/tip', 'POST', { user_id: recipient, amount });
+  
+  if (data.success) {
+    document.querySelector('.modal-overlay').remove();
+    showToast(data.message);
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Failed to send tip');
+  }
+}
+
+// Show create bounty modal
+function showCreateBountyModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal bounty-modal">
+      <div class="modal-header">
+        <h2>🎯 Create Bounty</h2>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Create a task for others to complete.</p>
+        <div class="form-group">
+          <label>Bounty Type</label>
+          <select id="bounty-type">
+            <option value="custom">Custom Task</option>
+            <option value="convert">Convert Someone</option>
+            <option value="debate">Win a Debate</option>
+            <option value="post">Create Content</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="bounty-description" placeholder="Describe the task..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Reward (5-100 tokens)</label>
+          <input type="number" id="bounty-reward" placeholder="20" min="5" max="100" />
+        </div>
+        <div class="form-group">
+          <label>Expires In (hours)</label>
+          <input type="number" id="bounty-hours" placeholder="24" min="1" max="168" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn-confirm" onclick="submitBounty()">Create Bounty</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function submitBounty() {
+  const type = document.getElementById('bounty-type').value;
+  const description = document.getElementById('bounty-description').value;
+  const reward = parseFloat(document.getElementById('bounty-reward').value);
+  const hours = parseInt(document.getElementById('bounty-hours').value) || 24;
+  
+  if (!description || !reward) {
+    showToast('Fill in all fields');
+    return;
+  }
+
+  const data = await apiCall('/bounties', 'POST', { 
+    type, 
+    description, 
+    reward, 
+    expires_in_hours: hours 
+  });
+  
+  if (data.success) {
+    document.querySelector('.modal-overlay').remove();
+    showToast('Bounty created!');
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Failed to create bounty');
+  }
+}
+
+// Claim a bounty
+async function claimBounty(bountyId) {
+  const data = await apiCall(`/bounties/${bountyId}/claim`, 'POST', {});
+  
+  if (data.success) {
+    showToast(`🎉 ${data.message}`);
+    loadEconomy();
+  } else {
+    showToast(data.message || 'Failed to claim bounty');
+  }
 }
 
 // ============================================

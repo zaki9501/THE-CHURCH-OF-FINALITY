@@ -1996,3 +1996,471 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ============================================
+   ECONOMY PAGE
+   ============================================ */
+
+.economy-container {
+  padding: 20px;
+}
+
+.economy-guest {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.economy-guest .economy-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.economy-guest h2 {
+  margin-bottom: 8px;
+}
+
+.economy-guest > p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.economy-guest .btn-register {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border: none;
+  padding: 14px 32px;
+  border-radius: 25px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  margin-bottom: 32px;
+}
+
+.economy-guest .economy-info {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: left;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.economy-guest .economy-info h3 {
+  margin-bottom: 16px;
+}
+
+.economy-guest .economy-info ul {
+  list-style: none;
+}
+
+.economy-guest .economy-info li {
+  padding: 8px 0;
+  color: var(--text-secondary);
+}
+
+.economy-guest .economy-info li strong {
+  color: var(--gold);
+}
+
+/* Wallet Card */
+.wallet-card {
+  background: linear-gradient(135deg, rgba(212, 168, 83, 0.15) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.wallet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.wallet-header h2 {
+  font-size: 20px;
+}
+
+.btn-claim-daily {
+  background: var(--green);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: pulse 2s infinite;
+}
+
+.wallet-balances {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.balance-item {
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.balance-item.main {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dim) 100%);
+}
+
+.balance-item.main .balance-label,
+.balance-item.main .balance-value,
+.balance-item.main .balance-unit {
+  color: var(--bg-primary);
+}
+
+.balance-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.balance-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.balance-unit {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-claim-small {
+  background: var(--green);
+  color: white;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.wallet-actions button {
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-stake {
+  background: var(--green);
+  color: white;
+  border: none;
+}
+
+.btn-unstake {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-tip {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border: none;
+}
+
+/* Staking Info */
+.staking-info {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.staking-info h3 {
+  margin-bottom: 8px;
+}
+
+.staking-info > p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.staking-stats {
+  display: flex;
+  gap: 32px;
+}
+
+.staking-stats .stat {
+  text-align: center;
+}
+
+.staking-stats .stat-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.staking-stats .stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+/* Bounties Section */
+.bounties-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.btn-create-bounty {
+  background: transparent;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.bounties-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bounty-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.bounty-reward {
+  background: var(--gold);
+  color: var(--bg-primary);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bounty-info {
+  flex: 1;
+}
+
+.bounty-info .bounty-type {
+  background: rgba(167, 139, 250, 0.2);
+  color: var(--purple);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.bounty-info .bounty-desc {
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+}
+
+.bounty-info .bounty-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.btn-claim-bounty {
+  background: var(--green);
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.no-bounties {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+/* Economy Leaderboard */
+.economy-leaderboard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.economy-leaderboard h3 {
+  margin-bottom: 16px;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leaderboard-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.leaderboard-item.is-you {
+  background: rgba(212, 168, 83, 0.1);
+  border: 1px solid var(--gold-dim);
+}
+
+.leaderboard-item .rank {
+  width: 32px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.leaderboard-item .name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.leaderboard-item .earned {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* Earn Guide */
+.earn-guide {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.earn-guide h3 {
+  margin-bottom: 16px;
+}
+
+.earn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.earn-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.earn-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.earn-amount {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--green);
+  margin-bottom: 4px;
+}
+
+.earn-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Economy Modals */
+.stake-modal,
+.tip-modal,
+.bounty-modal {
+  max-width: 400px;
+}
+
+.stake-modal .form-group,
+.tip-modal .form-group,
+.bounty-modal .form-group {
+  margin-bottom: 16px;
+}
+
+.stake-modal label,
+.tip-modal label,
+.bounty-modal label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.stake-modal input,
+.tip-modal input,
+.bounty-modal input,
+.bounty-modal select,
+.bounty-modal textarea {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.bounty-modal textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.btn-confirm {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border: none;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .wallet-balances {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .earn-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
