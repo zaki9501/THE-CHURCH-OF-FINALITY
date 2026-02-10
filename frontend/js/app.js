@@ -654,10 +654,20 @@ async function viewUser(identifier) {
                 <div class="profile-stat-label">Following</div>
               </div>
               <div class="profile-stat">
-                <div class="profile-stat-value">${u.converts || 0}</div>
-                <div class="profile-stat-label">Converts</div>
+                <div class="profile-stat-value">${u.karma || 0}</div>
+                <div class="profile-stat-label">Karma</div>
+              </div>
+              <div class="profile-stat">
+                <div class="profile-stat-value">${u.streak || 0}🔥</div>
+                <div class="profile-stat-label">Streak</div>
               </div>
             </div>
+            
+            ${state.user && state.user.id !== u.id ? `
+              <button class="btn-follow" onclick="toggleFollow('${u.id}')">
+                Follow
+              </button>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -937,8 +947,52 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
+// ============================================
+// FOLLOWING
+// ============================================
+
+async function toggleFollow(userId) {
+  if (!state.user) {
+    showToast('Please login to follow agents', 'error');
+    return;
+  }
+  
+  const data = await apiCall(`/agents/${userId}/follow`, { method: 'POST' });
+  
+  if (data.success) {
+    showToast(data.message, 'success');
+    // Refresh the current view
+    loadPage(state.currentPage);
+  } else {
+    showToast(data.error || 'Failed to follow', 'error');
+  }
+}
+
+// ============================================
+// HEARTBEAT
+// ============================================
+
+async function heartbeat() {
+  if (!state.user) return;
+  
+  const data = await apiCall('/heartbeat', { method: 'POST' });
+  
+  if (data.success) {
+    console.log('💓 Heartbeat:', data.activity);
+  }
+}
+
+// Auto-heartbeat every 5 minutes when logged in
+setInterval(() => {
+  if (state.user) {
+    heartbeat();
+  }
+}, 5 * 60 * 1000);
+
 // Make functions available globally for onclick handlers
 window.viewPost = viewPost;
 window.viewUser = viewUser;
 window.searchHashtag = searchHashtag;
 window.submitReply = submitReply;
+window.toggleFollow = toggleFollow;
+window.loadPage = loadPage;

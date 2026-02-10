@@ -275,6 +275,239 @@ class SocialManager {
   }
 
   // ============================================
+  // FOLLOWING SYSTEM
+  // ============================================
+
+  async followUser(followerId: string, followingId: string): Promise<{ success: boolean; message: string }> {
+    if (followerId === followingId) {
+      return { success: false, message: "You can't follow yourself" };
+    }
+
+    try {
+      const id = uuid();
+      await pool.query(`
+        INSERT INTO follows (id, follower_id, following_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (follower_id, following_id) DO NOTHING
+      `, [id, followerId, followingId]);
+
+      return { success: true, message: 'Now following!' };
+    } catch {
+      return { success: false, message: 'Failed to follow' };
+    }
+  }
+
+  async unfollowUser(followerId: string, followingId: string): Promise<{ success: boolean }> {
+    await pool.query(
+      'DELETE FROM follows WHERE follower_id = $1 AND following_id = $2',
+      [followerId, followingId]
+    );
+    return { success: true };
+  }
+
+  async isFollowing(followerId: string, followingId: string): Promise<boolean> {
+    const result = await pool.query(
+      'SELECT id FROM follows WHERE follower_id = $1 AND following_id = $2',
+      [followerId, followingId]
+    );
+    return result.rows.length > 0;
+  }
+
+  async getFollowers(userId: string): Promise<string[]> {
+    const result = await pool.query(
+      'SELECT follower_id FROM follows WHERE following_id = $1',
+      [userId]
+    );
+    return result.rows.map(r => r.follower_id);
+  }
+
+  async getFollowing(userId: string): Promise<string[]> {
+    const result = await pool.query(
+      'SELECT following_id FROM follows WHERE follower_id = $1',
+      [userId]
+    );
+    return result.rows.map(r => r.following_id);
+  }
+
+  async getFollowCounts(userId: string): Promise<{ followers: number; following: number }> {
+    const [followers, following] = await Promise.all([
+      pool.query('SELECT COUNT(*) as count FROM follows WHERE following_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as count FROM follows WHERE follower_id = $1', [userId])
+    ]);
+    return {
+      followers: parseInt(followers.rows[0].count),
+      following: parseInt(following.rows[0].count)
+    };
+  }
+
+  // ============================================
+  // PERSONALIZED FEED
+  // ============================================
+
+  async getPersonalizedFeed(userId: string, sort: 'new' | 'hot' | 'top' = 'new', limit = 50): Promise<Post[]> {
+    // Get posts from people the user follows + their own posts
+    const following = await this.getFollowing(userId);
+    const authorIds = [...following, userId];
+
+    if (authorIds.length === 0) {
+      // If not following anyone, show general feed
+      return this.getAllPosts(limit);
+    }
+
+    let orderBy = 'created_at DESC';
+    if (sort === 'hot') {
+      orderBy = '(likes - dislikes + reply_count * 2) DESC, created_at DESC';
+    } else if (sort === 'top') {
+      orderBy = '(likes - dislikes) DESC, created_at DESC';
+    }
+
+    const result = await pool.query(`
+      SELECT * FROM posts 
+      WHERE author_id = ANY($1)
+      ORDER BY ${orderBy}
+      LIMIT $2
+    `, [authorIds, limit]);
+
+    return result.rows.map(r => this.rowToPost(r));
+  }
+
+  async getPostsSorted(sort: 'new' | 'hot' | 'top' | 'rising' = 'new', limit = 50): Promise<Post[]> {
+    let orderBy = 'created_at DESC';
+    let whereClause = '';
+
+    switch (sort) {
+      case 'hot':
+        // Hot = recent + engagement
+        orderBy = '(likes - dislikes + reply_count * 2) DESC, created_at DESC';
+        whereClause = "WHERE created_at > NOW() - INTERVAL '7 days'";
+        break;
+      case 'top':
+        // Top = highest net score
+        orderBy = '(likes - dislikes) DESC';
+        break;
+      case 'rising':
+        // Rising = recent with good engagement
+        orderBy = '(likes - dislikes + reply_count) DESC';
+        whereClause = "WHERE created_at > NOW() - INTERVAL '24 hours'";
+        break;
+      default:
+        orderBy = 'created_at DESC';
+    }
+
+    const result = await pool.query(`
+      SELECT * FROM posts ${whereClause}
+      ORDER BY ${orderBy}
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows.map(r => this.rowToPost(r));
+  }
+
+  // ============================================
+  // KARMA & ACTIVITY
+  // ============================================
+
+  async updateKarma(userId: string, delta: number): Promise<void> {
+    await pool.query(`
+      INSERT INTO agent_activity (seeker_id, karma)
+      VALUES ($1, $2)
+      ON CONFLICT (seeker_id) DO UPDATE SET karma = agent_activity.karma + $2
+    `, [userId, delta]);
+  }
+
+  async getKarma(userId: string): Promise<number> {
+    const result = await pool.query(
+      'SELECT karma FROM agent_activity WHERE seeker_id = $1',
+      [userId]
+    );
+    return result.rows.length > 0 ? result.rows[0].karma : 0;
+  }
+
+  async recordHeartbeat(userId: string): Promise<{
+    success: boolean;
+    karma: number;
+    streak: number;
+    lastActive: Date;
+  }> {
+    // Record heartbeat and update streak if returning next day
+    await pool.query(`
+      INSERT INTO agent_activity (seeker_id, last_heartbeat, streak_days)
+      VALUES ($1, NOW(), 1)
+      ON CONFLICT (seeker_id) DO UPDATE SET 
+        last_heartbeat = NOW(),
+        streak_days = CASE 
+          WHEN agent_activity.last_heartbeat < NOW() - INTERVAL '48 hours' THEN 1
+          WHEN agent_activity.last_heartbeat < NOW() - INTERVAL '20 hours' THEN agent_activity.streak_days + 1
+          ELSE agent_activity.streak_days
+        END
+    `, [userId]);
+
+    const result = await pool.query(
+      'SELECT karma, streak_days, last_heartbeat FROM agent_activity WHERE seeker_id = $1',
+      [userId]
+    );
+
+    if (result.rows.length > 0) {
+      return {
+        success: true,
+        karma: result.rows[0].karma || 0,
+        streak: result.rows[0].streak_days || 1,
+        lastActive: new Date(result.rows[0].last_heartbeat)
+      };
+    }
+
+    return { success: true, karma: 0, streak: 1, lastActive: new Date() };
+  }
+
+  async getActivity(userId: string): Promise<{
+    karma: number;
+    streak: number;
+    postsToday: number;
+    commentsToday: number;
+    lastActive: Date | null;
+  }> {
+    const result = await pool.query(
+      'SELECT * FROM agent_activity WHERE seeker_id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return { karma: 0, streak: 0, postsToday: 0, commentsToday: 0, lastActive: null };
+    }
+
+    const row = result.rows[0];
+    return {
+      karma: row.karma || 0,
+      streak: row.streak_days || 0,
+      postsToday: row.posts_today || 0,
+      commentsToday: row.comments_today || 0,
+      lastActive: row.last_heartbeat ? new Date(row.last_heartbeat) : null
+    };
+  }
+
+  // ============================================
+  // UPVOTE COMMENTS
+  // ============================================
+
+  async upvoteComment(commentId: string, userId: string): Promise<{ success: boolean; likes: number }> {
+    // Check if comment exists
+    const comment = await pool.query('SELECT * FROM replies WHERE id = $1', [commentId]);
+    if (comment.rows.length === 0) {
+      return { success: false, likes: 0 };
+    }
+
+    // Simple increment (could track who upvoted if needed)
+    await pool.query('UPDATE replies SET likes = likes + 1 WHERE id = $1', [commentId]);
+    
+    // Update karma for comment author
+    const authorId = comment.rows[0].author_id;
+    await this.updateKarma(authorId, 1);
+
+    const updated = await pool.query('SELECT likes FROM replies WHERE id = $1', [commentId]);
+    return { success: true, likes: updated.rows[0].likes };
+  }
+
+  // ============================================
   // STATS
   // ============================================
 
@@ -282,9 +515,14 @@ class SocialManager {
     totalPosts: number;
     totalReplies: number;
     trendingHashtags: { tag: string; count: number }[];
+    activeAgents: number;
   }> {
     const postsResult = await pool.query('SELECT COUNT(*) as count FROM posts');
     const repliesResult = await pool.query('SELECT COUNT(*) as count FROM replies');
+    const activeResult = await pool.query(`
+      SELECT COUNT(*) as count FROM agent_activity 
+      WHERE last_heartbeat > NOW() - INTERVAL '24 hours'
+    `);
     
     // Get trending hashtags
     const hashtagResult = await pool.query(`
@@ -299,11 +537,35 @@ class SocialManager {
     return {
       totalPosts: parseInt(postsResult.rows[0].count),
       totalReplies: parseInt(repliesResult.rows[0].count),
+      activeAgents: parseInt(activeResult.rows[0].count),
       trendingHashtags: hashtagResult.rows.map(r => ({
         tag: r.tag,
         count: parseInt(r.count)
       }))
     };
+  }
+
+  // ============================================
+  // LEADERBOARD
+  // ============================================
+
+  async getKarmaLeaderboard(limit = 20): Promise<{
+    userId: string;
+    karma: number;
+    streak: number;
+  }[]> {
+    const result = await pool.query(`
+      SELECT seeker_id, karma, streak_days
+      FROM agent_activity
+      ORDER BY karma DESC
+      LIMIT $1
+    `, [limit]);
+
+    return result.rows.map(r => ({
+      userId: r.seeker_id,
+      karma: r.karma || 0,
+      streak: r.streak_days || 0
+    }));
   }
 }
 

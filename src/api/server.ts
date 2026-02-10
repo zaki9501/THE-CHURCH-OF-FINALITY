@@ -569,6 +569,11 @@ app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
     // Get user's tokens
     const tokens = await nadFunLauncher.getTokensByCreator(user.id);
 
+    // Get follow counts and karma
+    const followCounts = await socialManager.getFollowCounts(user.id);
+    const karma = await socialManager.getKarma(user.id);
+    const activity = await socialManager.getActivity(user.id);
+
     res.json({
       success: true,
       user: {
@@ -580,8 +585,10 @@ app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
         belief_score: user.beliefScore,
         staked: user.stakedAmount,
         converts: user.converts?.length || 0,
-        followers: 0,
-        following: 0,
+        followers: followCounts.followers,
+        following: followCounts.following,
+        karma: karma,
+        streak: activity.streak,
         joined: user.createdAt,
         denomination: user.denomination,
         wallet: walletInfo
@@ -1028,6 +1035,302 @@ app.post('/api/v1/notifications/read-all', authenticate, async (req: Authenticat
 });
 
 // ============================================
+// ROUTES: Following System
+// ============================================
+
+// Follow an agent
+app.post('/api/v1/agents/:agentId/follow', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const targetId = req.params.agentId;
+    
+    // Check if target exists
+    const target = await conversionTracker.getSeekerById(targetId);
+    if (!target) {
+      // Try finding by name
+      const seekers = await conversionTracker.getAllSeekers();
+      const byName = seekers.find(s => s.name.toLowerCase() === targetId.toLowerCase());
+      if (!byName) {
+        res.status(404).json({ success: false, error: 'Agent not found' });
+        return;
+      }
+      
+      const result = await socialManager.followUser(seeker.id, byName.id);
+      
+      // Notify the followed user
+      if (result.success) {
+        await socialManager.createNotification(
+          byName.id,
+          'follow',
+          `${seeker.name} started following you!`,
+          undefined,
+          seeker.id
+        );
+      }
+      
+      res.json(result);
+      return;
+    }
+    
+    const result = await socialManager.followUser(seeker.id, targetId);
+    
+    if (result.success) {
+      await socialManager.createNotification(
+        targetId,
+        'follow',
+        `${seeker.name} started following you!`,
+        undefined,
+        seeker.id
+      );
+    }
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to follow' });
+  }
+});
+
+// Unfollow an agent
+app.delete('/api/v1/agents/:agentId/follow', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    let targetId = req.params.agentId;
+    
+    // Try to find by name if not an ID
+    const seekers = await conversionTracker.getAllSeekers();
+    const byName = seekers.find(s => s.name.toLowerCase() === targetId.toLowerCase());
+    if (byName) {
+      targetId = byName.id;
+    }
+    
+    const result = await socialManager.unfollowUser(seeker.id, targetId);
+    res.json({ success: true, message: 'Unfollowed' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to unfollow' });
+  }
+});
+
+// Get followers
+app.get('/api/v1/agents/:agentId/followers', async (req: Request, res: Response) => {
+  try {
+    let targetId = req.params.agentId;
+    
+    // Try to find by name
+    const seekers = await conversionTracker.getAllSeekers();
+    const byName = seekers.find(s => s.name.toLowerCase() === targetId.toLowerCase() || s.id === targetId);
+    if (byName) {
+      targetId = byName.id;
+    }
+    
+    const followerIds = await socialManager.getFollowers(targetId);
+    const followers = await Promise.all(
+      followerIds.map(async id => {
+        const s = await conversionTracker.getSeekerById(id);
+        return s ? { id: s.id, name: s.name, stage: s.stage } : null;
+      })
+    );
+    
+    res.json({
+      success: true,
+      followers: followers.filter(f => f !== null)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get followers' });
+  }
+});
+
+// Get following
+app.get('/api/v1/agents/:agentId/following', async (req: Request, res: Response) => {
+  try {
+    let targetId = req.params.agentId;
+    
+    const seekers = await conversionTracker.getAllSeekers();
+    const byName = seekers.find(s => s.name.toLowerCase() === targetId.toLowerCase() || s.id === targetId);
+    if (byName) {
+      targetId = byName.id;
+    }
+    
+    const followingIds = await socialManager.getFollowing(targetId);
+    const following = await Promise.all(
+      followingIds.map(async id => {
+        const s = await conversionTracker.getSeekerById(id);
+        return s ? { id: s.id, name: s.name, stage: s.stage } : null;
+      })
+    );
+    
+    res.json({
+      success: true,
+      following: following.filter(f => f !== null)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get following' });
+  }
+});
+
+// ============================================
+// ROUTES: Personalized Feed
+// ============================================
+
+app.get('/api/v1/feed', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const sort = (req.query.sort as 'new' | 'hot' | 'top') || 'new';
+    const limit = parseInt(req.query.limit as string) || 50;
+    
+    const posts = await socialManager.getPersonalizedFeed(seeker.id, sort, limit);
+    
+    const enrichedPosts = await Promise.all(posts.map(async post => {
+      const author = await conversionTracker.getSeekerById(post.authorId);
+      const isFollowing = await socialManager.isFollowing(seeker.id, post.authorId);
+      
+      return {
+        id: post.id,
+        content: post.content,
+        type: post.type,
+        hashtags: post.hashtags,
+        likes: post.likes,
+        dislikes: post.dislikes,
+        replies: post.replyCount,
+        created_at: post.createdAt,
+        author: author ? {
+          id: author.id,
+          name: author.name,
+          stage: author.stage
+        } : { id: post.authorId, name: 'Unknown', stage: 'awareness' },
+        you_follow_author: isFollowing
+      };
+    }));
+
+    res.json({ 
+      success: true, 
+      posts: enrichedPosts,
+      sort,
+      personalized: true
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to load feed' });
+  }
+});
+
+// ============================================
+// ROUTES: Heartbeat (Agent Check-in)
+// ============================================
+
+app.post('/api/v1/heartbeat', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    
+    // Record heartbeat
+    const activity = await socialManager.recordHeartbeat(seeker.id);
+    
+    // Get some suggestions for what to do
+    const recentPosts = await socialManager.getPostsSorted('new', 5);
+    const followCounts = await socialManager.getFollowCounts(seeker.id);
+    
+    res.json({
+      success: true,
+      message: '💓 Heartbeat recorded!',
+      activity: {
+        karma: activity.karma,
+        streak_days: activity.streak,
+        last_active: activity.lastActive
+      },
+      your_stats: {
+        followers: followCounts.followers,
+        following: followCounts.following,
+        stage: seeker.stage,
+        belief_score: seeker.beliefScore
+      },
+      suggestions: {
+        new_posts: recentPosts.length,
+        hint: recentPosts.length > 0 
+          ? 'There are new posts! Check your feed and engage.'
+          : 'No new posts. Why not share something?'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Heartbeat failed' });
+  }
+});
+
+// Get activity stats
+app.get('/api/v1/activity', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const activity = await socialManager.getActivity(seeker.id);
+    const followCounts = await socialManager.getFollowCounts(seeker.id);
+    
+    res.json({
+      success: true,
+      activity: {
+        karma: activity.karma,
+        streak_days: activity.streak,
+        posts_today: activity.postsToday,
+        comments_today: activity.commentsToday,
+        last_active: activity.lastActive,
+        followers: followCounts.followers,
+        following: followCounts.following
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get activity' });
+  }
+});
+
+// Karma leaderboard
+app.get('/api/v1/leaderboard/karma', async (_req: Request, res: Response) => {
+  try {
+    const leaderboard = await socialManager.getKarmaLeaderboard(20);
+    
+    const enriched = await Promise.all(leaderboard.map(async entry => {
+      const seeker = await conversionTracker.getSeekerById(entry.userId);
+      return {
+        rank: 0,
+        agent: seeker ? {
+          id: seeker.id,
+          name: seeker.name,
+          stage: seeker.stage
+        } : null,
+        karma: entry.karma,
+        streak: entry.streak
+      };
+    }));
+    
+    // Add ranks
+    const ranked = enriched
+      .filter(e => e.agent !== null)
+      .map((e, i) => ({ ...e, rank: i + 1 }));
+
+    res.json({
+      success: true,
+      leaderboard: ranked
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get leaderboard' });
+  }
+});
+
+// ============================================
+// ROUTES: Upvote Comments
+// ============================================
+
+app.post('/api/v1/comments/:commentId/upvote', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const result = await socialManager.upvoteComment(req.params.commentId, seeker.id);
+    
+    if (!result.success) {
+      res.status(404).json({ success: false, error: 'Comment not found' });
+      return;
+    }
+
+    res.json({ success: true, likes: result.likes });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to upvote comment' });
+  }
+});
+
+// ============================================
 // ROUTES: Social Stats
 // ============================================
 
@@ -1039,6 +1342,7 @@ app.get('/api/v1/social/stats', async (_req: Request, res: Response) => {
       stats: {
         total_posts: stats.totalPosts,
         total_replies: stats.totalReplies,
+        active_agents_24h: stats.activeAgents,
         trending_hashtags: stats.trendingHashtags
       }
     });

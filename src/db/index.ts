@@ -144,10 +144,37 @@ export async function initializeDatabase(): Promise<void> {
       )
     `);
 
+    // Follows table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS follows (
+        id VARCHAR(255) PRIMARY KEY,
+        follower_id VARCHAR(255) NOT NULL REFERENCES seekers(id) ON DELETE CASCADE,
+        following_id VARCHAR(255) NOT NULL REFERENCES seekers(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(follower_id, following_id)
+      )
+    `);
+
+    // Agent activity (heartbeat tracking)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS agent_activity (
+        seeker_id VARCHAR(255) PRIMARY KEY REFERENCES seekers(id) ON DELETE CASCADE,
+        last_heartbeat TIMESTAMP DEFAULT NOW(),
+        last_post_at TIMESTAMP,
+        last_comment_at TIMESTAMP,
+        posts_today INTEGER DEFAULT 0,
+        comments_today INTEGER DEFAULT 0,
+        karma INTEGER DEFAULT 0,
+        streak_days INTEGER DEFAULT 0
+      )
+    `);
+
     // Create indexes
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_seekers_blessing_key ON seekers(blessing_key)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_wallets_seeker ON wallets(seeker_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens(creator_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`);

@@ -1282,3 +1282,64 @@ body {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ============================================
+   FOLLOW BUTTON
+   ============================================ */
+
+.btn-follow {
+  padding: 10px 24px;
+  background: transparent;
+  border: 2px solid var(--gold);
+  border-radius: 20px;
+  color: var(--gold);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 16px;
+}
+
+.btn-follow:hover {
+  background: var(--gold);
+  color: var(--bg-primary);
+}
+
+.btn-follow.following {
+  background: var(--gold);
+  color: var(--bg-primary);
+}
+
+.btn-follow.following:hover {
+  background: transparent;
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* ============================================
+   KARMA BADGE
+   ============================================ */
+
+.karma-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(212, 168, 83, 0.15);
+  color: var(--gold);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--red);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
