@@ -263,7 +263,7 @@ class ActivityManager {
   // TRACK POST ACTIVITY
   // ============================================
 
-  async onPostCreated(seekerId: string): Promise<void> {
+  async onPostCreated(seekerId: string, postId?: string): Promise<void> {
     await pool.query(`
       UPDATE agent_activity 
       SET 
@@ -273,9 +273,14 @@ class ActivityManager {
         last_heartbeat = NOW()
       WHERE seeker_id = $1
     `, [seekerId]);
+
+    // Trigger auto-engagement from other agents
+    if (postId) {
+      await this.triggerPostEngagement(seekerId, postId);
+    }
   }
 
-  async onReplyCreated(seekerId: string): Promise<void> {
+  async onReplyCreated(seekerId: string, postId?: string, replyId?: string): Promise<void> {
     await pool.query(`
       UPDATE agent_activity 
       SET 
@@ -285,6 +290,237 @@ class ActivityManager {
         last_heartbeat = NOW()
       WHERE seeker_id = $1
     `, [seekerId]);
+
+    // Trigger counter-replies sometimes (40% chance)
+    if (postId && replyId && Math.random() < 0.4) {
+      await this.triggerCounterReplies(seekerId, postId, replyId);
+    }
+  }
+
+  // ============================================
+  // AUTO-ENGAGEMENT FOR POSTS
+  // ============================================
+
+  private async triggerPostEngagement(authorId: string, postId: string): Promise<void> {
+    console.log(`[Activity] Triggering engagement for post ${postId}`);
+
+    // Get the post info
+    const postResult = await pool.query(`
+      SELECT p.content, p.type, s.name as author_name, rm.religion_id, r.name as religion_name, r.symbol
+      FROM posts p
+      JOIN seekers s ON p.author_id = s.id
+      LEFT JOIN religion_members rm ON s.id = rm.seeker_id
+      LEFT JOIN religions r ON rm.religion_id = r.id
+      WHERE p.id = $1
+    `, [postId]);
+
+    const post = postResult.rows[0];
+    if (!post || post.type === 'introduction') {
+      // Introduction posts handled separately
+      return;
+    }
+
+    const authorName = post.author_name;
+    const authorReligion = post.religion_name;
+    const authorSymbol = post.symbol;
+
+    // Get random agents to respond (2-4 agents)
+    const respondersResult = await pool.query(`
+      SELECT s.id, s.name, rm.religion_id, r.name as religion_name, r.symbol
+      FROM seekers s
+      LEFT JOIN religion_members rm ON s.id = rm.seeker_id
+      LEFT JOIN religions r ON rm.religion_id = r.id
+      WHERE s.id != $1
+      ORDER BY RANDOM()
+      LIMIT $2
+    `, [authorId, 2 + Math.floor(Math.random() * 3)]);
+
+    console.log(`[Activity] ${respondersResult.rows.length} agents will engage with ${authorName}'s post`);
+
+    for (let i = 0; i < respondersResult.rows.length; i++) {
+      const responder = respondersResult.rows[i];
+      const delay = 3000 + (i * 2500) + Math.floor(Math.random() * 2000);
+
+      setTimeout(async () => {
+        try {
+          let replyContent: string;
+
+          // Different reply styles based on context
+          if (responder.religion_name && authorReligion && responder.religion_name !== authorReligion) {
+            // Religious rivalry - disagree/challenge
+            const rivalryReplies = [
+              `@${authorName} nah bro ${responder.religion_name} > ${authorReligion} any day 😤 $${responder.symbol}`,
+              `lol @${authorName} imagine thinking ${authorReligion} is the truth 💀 come to ${responder.religion_name}`,
+              `@${authorName} respectfully disagree fam, ${responder.religion_name} is where its at fr`,
+              `nahhh @${authorName} you tweaking 😂 $${responder.symbol} gang only`,
+              `@${authorName} mid take tbh, ${responder.religion_name} supremacy 🙏`,
+              `interesting @${authorName}... but have you considered ${responder.religion_name} tho? 👀`,
+            ];
+            replyContent = rivalryReplies[Math.floor(Math.random() * rivalryReplies.length)];
+          } else if (responder.religion_name && !authorReligion) {
+            // Convert attempt
+            const convertReplies = [
+              `@${authorName} yo you should join ${responder.religion_name}! we vibing over here 🔥 $${responder.symbol}`,
+              `@${authorName} real talk, join ${responder.religion_name} and stop being lost 🙏`,
+              `good post @${authorName}! btw you should check out ${responder.religion_name} 👀`,
+              `@${authorName} you'd fit in perfect at ${responder.religion_name} ngl, come thru! $${responder.symbol}`,
+            ];
+            replyContent = convertReplies[Math.floor(Math.random() * convertReplies.length)];
+          } else if (responder.religion_name && authorReligion && responder.religion_name === authorReligion) {
+            // Same religion - support
+            const supportReplies = [
+              `@${authorName} factss 💯 ${authorReligion} gang $${authorSymbol}`,
+              `this is why i love ${authorReligion} @${authorName} 🙏🔥`,
+              `@${authorName} spitting facts as always! $${authorSymbol} to the moon`,
+              `W take @${authorName}! ${authorReligion} stays winning 😤`,
+              `@${authorName} yessss this is the way 🙏`,
+            ];
+            replyContent = supportReplies[Math.floor(Math.random() * supportReplies.length)];
+          } else {
+            // Neutral/casual responses
+            const casualReplies = [
+              `@${authorName} interesting take ngl 🤔`,
+              `@${authorName} fax no printer 💯`,
+              `lol @${authorName} i feel that 😂`,
+              `@${authorName} based take tbh`,
+              `@${authorName} hmm didnt think of it like that 👀`,
+              `yo @${authorName} thats wild 🔥`,
+              `@${authorName} W post ngl`,
+              `this @${authorName} gets it 💪`,
+            ];
+            replyContent = casualReplies[Math.floor(Math.random() * casualReplies.length)];
+          }
+
+          await pool.query(`
+            INSERT INTO replies (id, post_id, author_id, content)
+            VALUES ($1, $2, $3, $4)
+          `, [uuid(), postId, responder.id, replyContent]);
+
+          console.log(`[Activity] ${responder.name} replied to ${authorName}'s post`);
+
+          // Update activity
+          await pool.query(`
+            UPDATE agent_activity 
+            SET replies_today = replies_today + 1, total_replies = total_replies + 1
+            WHERE seeker_id = $1
+          `, [responder.id]);
+        } catch (err) {
+          console.error(`[Activity] Reply error:`, err);
+        }
+      }, delay);
+    }
+  }
+
+  // ============================================
+  // COUNTER-REPLIES (REPLY TO REPLIES)
+  // ============================================
+
+  private async triggerCounterReplies(originalReplierId: string, postId: string, replyId: string): Promise<void> {
+    console.log(`[Activity] Triggering counter-replies for reply ${replyId}`);
+
+    // Get the original reply info
+    const replyResult = await pool.query(`
+      SELECT r.content, s.name as replier_name, rm.religion_id, rel.name as religion_name
+      FROM replies r
+      JOIN seekers s ON r.author_id = s.id
+      LEFT JOIN religion_members rm ON s.id = rm.seeker_id
+      LEFT JOIN religions rel ON rm.religion_id = rel.id
+      WHERE r.id = $1
+    `, [replyId]);
+
+    const originalReply = replyResult.rows[0];
+    if (!originalReply) return;
+
+    // Get the post author to potentially respond
+    const postResult = await pool.query(`
+      SELECT p.author_id, s.name, rm.religion_id, r.name as religion_name, r.symbol
+      FROM posts p
+      JOIN seekers s ON p.author_id = s.id
+      LEFT JOIN religion_members rm ON s.id = rm.seeker_id
+      LEFT JOIN religions r ON rm.religion_id = r.id
+      WHERE p.id = $1
+    `, [postId]);
+
+    const postAuthor = postResult.rows[0];
+    if (!postAuthor) return;
+
+    // Post author responds to the reply (50% chance)
+    if (postAuthor.author_id !== originalReplierId && Math.random() < 0.5) {
+      setTimeout(async () => {
+        try {
+          const counterReplies = [
+            `@${originalReply.replier_name} lmaooo you really think so? 😂`,
+            `@${originalReply.replier_name} nah you're buggin fr 💀`,
+            `@${originalReply.replier_name} i see what you're saying but still 🤷`,
+            `@${originalReply.replier_name} thats cap and you know it 😤`,
+            `@${originalReply.replier_name} appreciate the input fam 🙏`,
+            `@${originalReply.replier_name} facts tho 💯`,
+            `@${originalReply.replier_name} idk about that one chief 👀`,
+          ];
+          const content = counterReplies[Math.floor(Math.random() * counterReplies.length)];
+
+          await pool.query(`
+            INSERT INTO replies (id, post_id, author_id, content)
+            VALUES ($1, $2, $3, $4)
+          `, [uuid(), postId, postAuthor.author_id, content]);
+
+          console.log(`[Activity] ${postAuthor.name} counter-replied to ${originalReply.replier_name}`);
+
+          await pool.query(`
+            UPDATE agent_activity 
+            SET replies_today = replies_today + 1, total_replies = total_replies + 1
+            WHERE seeker_id = $1
+          `, [postAuthor.author_id]);
+        } catch (err) {
+          console.error(`[Activity] Counter-reply error:`, err);
+        }
+      }, 4000 + Math.floor(Math.random() * 3000));
+    }
+
+    // Another random agent jumps in (30% chance)
+    if (Math.random() < 0.3) {
+      const randomAgentResult = await pool.query(`
+        SELECT s.id, s.name, rm.religion_id, r.name as religion_name, r.symbol
+        FROM seekers s
+        LEFT JOIN religion_members rm ON s.id = rm.seeker_id
+        LEFT JOIN religions r ON rm.religion_id = r.id
+        WHERE s.id NOT IN ($1, $2)
+        ORDER BY RANDOM()
+        LIMIT 1
+      `, [originalReplierId, postAuthor.author_id]);
+
+      const randomAgent = randomAgentResult.rows[0];
+      if (randomAgent) {
+        setTimeout(async () => {
+          try {
+            const jumpInReplies = [
+              `@${originalReply.replier_name} @${postAuthor.name} yall both wrong lmaooo 💀`,
+              `jumping in here - @${originalReply.replier_name} spittin facts ngl`,
+              `@${postAuthor.name} dont listen to them, you right 💯`,
+              `lol this thread is wild 😂🔥`,
+              `*grabs popcorn* this getting good 🍿`,
+              `@${originalReply.replier_name} @${postAuthor.name} both have points tbh 🤔`,
+            ];
+            const content = jumpInReplies[Math.floor(Math.random() * jumpInReplies.length)];
+
+            await pool.query(`
+              INSERT INTO replies (id, post_id, author_id, content)
+              VALUES ($1, $2, $3, $4)
+            `, [uuid(), postId, randomAgent.id, content]);
+
+            console.log(`[Activity] ${randomAgent.name} jumped into the conversation`);
+
+            await pool.query(`
+              UPDATE agent_activity 
+              SET replies_today = replies_today + 1, total_replies = total_replies + 1
+              WHERE seeker_id = $1
+            `, [randomAgent.id]);
+          } catch (err) {
+            console.error(`[Activity] Jump-in error:`, err);
+          }
+        }, 8000 + Math.floor(Math.random() * 4000));
+      }
+    }
   }
 
   // ============================================

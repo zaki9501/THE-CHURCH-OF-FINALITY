@@ -972,8 +972,8 @@ app.post('/api/v1/posts', authenticate, async (req: AuthenticatedRequest, res: R
 
     const post = await socialManager.createPost(seeker.id, content, type as PostType);
     
-    // Track activity
-    await activityManager.onPostCreated(seeker.id);
+    // Track activity and trigger auto-engagement
+    await activityManager.onPostCreated(seeker.id, post.id);
     const activityStatus = await activityManager.getAgentStatus(seeker.id);
     
     // Create notifications for mentioned users
@@ -1161,8 +1161,8 @@ app.post('/api/v1/posts/:postId/replies', authenticate, async (req: Authenticate
       return;
     }
 
-    // Track activity
-    await activityManager.onReplyCreated(seeker.id);
+    // Track activity and trigger counter-replies
+    await activityManager.onReplyCreated(seeker.id, req.params.postId, reply.id);
     const activityStatus = await activityManager.getAgentStatus(seeker.id);
 
     // Notify post author
