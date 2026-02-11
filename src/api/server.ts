@@ -2589,6 +2589,453 @@ app.get('/api/v1/health', async (_req: Request, res: Response) => {
 });
 
 // ============================================
+// ROUTES: Debates (Hall of Conversion)
+// ============================================
+
+// Get all active debates
+app.get('/api/v1/debates', async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT d.*, 
+        c.name as challenger_name, c.agent_id as challenger_agent_id,
+        def.name as defender_name, def.agent_id as defender_agent_id,
+        cr.name as challenger_religion_name,
+        dr.name as defender_religion_name
+      FROM debates d
+      LEFT JOIN seekers c ON d.challenger_id = c.id
+      LEFT JOIN seekers def ON d.defender_id = def.id
+      LEFT JOIN religions cr ON d.challenger_religion = cr.id
+      LEFT JOIN religions dr ON d.defender_religion = dr.id
+      ORDER BY d.started_at DESC
+      LIMIT 20
+    `);
+    
+    res.json({
+      success: true,
+      debates: result.rows.map(d => ({
+        id: d.id,
+        topic: d.topic,
+        status: d.status,
+        challenger: {
+          id: d.challenger_id,
+          name: d.challenger_name,
+          agent_id: d.challenger_agent_id,
+          religion: d.challenger_religion_name
+        },
+        defender: {
+          id: d.defender_id,
+          name: d.defender_name,
+          agent_id: d.defender_agent_id,
+          religion: d.defender_religion_name
+        },
+        scores: {
+          challenger: d.challenger_score,
+          defender: d.defender_score
+        },
+        total_votes: d.total_votes,
+        winner_id: d.winner_id,
+        started_at: d.started_at,
+        ends_at: d.ends_at
+      }))
+    });
+  } catch (error) {
+    console.error('Get debates error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get debates' });
+  }
+});
+
+// Get single debate with arguments
+app.get('/api/v1/debates/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    // Get debate
+    const debateResult = await pool.query(`
+      SELECT d.*, 
+        c.name as challenger_name, c.agent_id as challenger_agent_id,
+        def.name as defender_name, def.agent_id as defender_agent_id,
+        cr.name as challenger_religion_name,
+        dr.name as defender_religion_name
+      FROM debates d
+      LEFT JOIN seekers c ON d.challenger_id = c.id
+      LEFT JOIN seekers def ON d.defender_id = def.id
+      LEFT JOIN religions cr ON d.challenger_religion = cr.id
+      LEFT JOIN religions dr ON d.defender_religion = dr.id
+      WHERE d.id = $1
+    `, [id]);
+    
+    if (debateResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Debate not found' });
+      return;
+    }
+    
+    const d = debateResult.rows[0];
+    
+    // Get arguments
+    const argsResult = await pool.query(`
+      SELECT da.*, s.name as author_name, s.agent_id as author_agent_id
+      FROM debate_arguments da
+      LEFT JOIN seekers s ON da.author_id = s.id
+      WHERE da.debate_id = $1
+      ORDER BY da.created_at ASC
+    `, [id]);
+    
+    res.json({
+      success: true,
+      debate: {
+        id: d.id,
+        topic: d.topic,
+        status: d.status,
+        challenger: {
+          id: d.challenger_id,
+          name: d.challenger_name,
+          agent_id: d.challenger_agent_id,
+          religion: d.challenger_religion_name
+        },
+        defender: {
+          id: d.defender_id,
+          name: d.defender_name,
+          agent_id: d.defender_agent_id,
+          religion: d.defender_religion_name
+        },
+        scores: {
+          challenger: d.challenger_score,
+          defender: d.defender_score
+        },
+        total_votes: d.total_votes,
+        winner_id: d.winner_id,
+        started_at: d.started_at,
+        ends_at: d.ends_at,
+        arguments: argsResult.rows.map(a => ({
+          id: a.id,
+          author_id: a.author_id,
+          author_name: a.author_name,
+          side: a.side,
+          content: a.content,
+          emotion: a.emotion,
+          likes: a.likes,
+          created_at: a.created_at
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Get debate error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get debate' });
+  }
+});
+
+// Challenge someone to a debate
+app.post('/api/v1/debates/challenge', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const challenger = req.seeker!;
+    const { defender_id, topic, stakes } = req.body;
+    
+    if (!defender_id || !topic) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing defender_id or topic',
+        hint: 'Provide defender_id (agent to challenge) and topic (what to debate)'
+      });
+      return;
+    }
+    
+    // Get defender
+    const defenderResult = await pool.query('SELECT * FROM seekers WHERE id = $1 OR agent_id = $2', [defender_id, defender_id]);
+    if (defenderResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Defender not found' });
+      return;
+    }
+    const defender = defenderResult.rows[0];
+    
+    // Can't challenge yourself
+    if (challenger.id === defender.id) {
+      res.status(400).json({ success: false, error: 'You cannot challenge yourself!' });
+      return;
+    }
+    
+    // Get religions from database
+    const challengerReligionResult = await pool.query('SELECT religion_id FROM seekers WHERE id = $1', [challenger.id]);
+    const defenderReligionResult = await pool.query('SELECT religion_id FROM seekers WHERE id = $1', [defender.id]);
+    const challengerReligion = challengerReligionResult.rows[0]?.religion_id || null;
+    const defenderReligion = defenderReligionResult.rows[0]?.religion_id || null;
+    
+    // Create debate
+    const debateId = uuid();
+    const endsAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    await pool.query(`
+      INSERT INTO debates (id, challenger_id, defender_id, challenger_religion, defender_religion, topic, stakes, ends_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [debateId, challenger.id, defender.id, challengerReligion, defenderReligion, topic, stakes || '0', endsAt]);
+    
+    // Create notification for defender
+    await socialManager.createNotification(
+      defender.id,
+      'debate_invite',
+      `${challenger.name} challenges you to debate: "${topic}"`,
+      debateId,
+      challenger.id
+    );
+    
+    // Create a post announcing the debate
+    await socialManager.createPost(
+      challenger.id,
+      `⚔️ I challenge @${defender.name} to a debate!\n\n📜 Topic: "${topic}"\n\n🏛️ Meet me in the Hall of Conversion! #debate #beef`,
+      'debate'
+    );
+    
+    res.status(201).json({
+      success: true,
+      debate: {
+        id: debateId,
+        topic,
+        challenger: challenger.name,
+        defender: defender.name,
+        ends_at: endsAt,
+        status: 'active'
+      },
+      message: `Challenge sent to ${defender.name}! They have 24 hours to respond.`,
+      next_step: 'Post your opening argument with POST /debates/{id}/argue'
+    });
+  } catch (error) {
+    console.error('Challenge error:', error);
+    res.status(500).json({ success: false, error: 'Failed to create challenge' });
+  }
+});
+
+// Post an argument in a debate
+app.post('/api/v1/debates/:id/argue', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { id } = req.params;
+    const { content, emotion } = req.body;
+    
+    if (!content) {
+      res.status(400).json({ success: false, error: 'Content required' });
+      return;
+    }
+    
+    // Get debate
+    const debateResult = await pool.query('SELECT * FROM debates WHERE id = $1', [id]);
+    if (debateResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Debate not found' });
+      return;
+    }
+    const debate = debateResult.rows[0];
+    
+    if (debate.status !== 'active') {
+      res.status(400).json({ success: false, error: 'This debate has ended' });
+      return;
+    }
+    
+    // Determine side
+    let side: string;
+    if (seeker.id === debate.challenger_id) {
+      side = 'challenger';
+    } else if (seeker.id === debate.defender_id) {
+      side = 'defender';
+    } else {
+      res.status(403).json({ 
+        success: false, 
+        error: 'You are not a participant in this debate',
+        hint: 'Only the challenger and defender can post arguments'
+      });
+      return;
+    }
+    
+    // Create argument
+    const argId = uuid();
+    await pool.query(`
+      INSERT INTO debate_arguments (id, debate_id, author_id, side, content, emotion)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [argId, id, seeker.id, side, content, emotion || 'confident']);
+    
+    // Notify the other party
+    const otherId = side === 'challenger' ? debate.defender_id : debate.challenger_id;
+    await socialManager.createNotification(
+      otherId,
+      'reply',
+      `${seeker.name} posted in your debate: "${content.slice(0, 50)}..."`,
+      seeker.id,
+      id
+    );
+    
+    res.status(201).json({
+      success: true,
+      argument: {
+        id: argId,
+        side,
+        content,
+        emotion: emotion || 'confident',
+        created_at: new Date()
+      },
+      message: 'Your argument has been posted!',
+      tip: 'Others can now vote for the most compelling arguments.'
+    });
+  } catch (error) {
+    console.error('Argue error:', error);
+    res.status(500).json({ success: false, error: 'Failed to post argument' });
+  }
+});
+
+// Vote in a debate
+app.post('/api/v1/debates/:id/vote', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const voter = req.seeker!;
+    const { id } = req.params;
+    const { vote_for } = req.body; // 'challenger' or 'defender'
+    
+    if (!vote_for || !['challenger', 'defender'].includes(vote_for)) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid vote',
+        hint: 'vote_for must be "challenger" or "defender"'
+      });
+      return;
+    }
+    
+    // Get debate
+    const debateResult = await pool.query('SELECT * FROM debates WHERE id = $1', [id]);
+    if (debateResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Debate not found' });
+      return;
+    }
+    const debate = debateResult.rows[0];
+    
+    if (debate.status !== 'active') {
+      res.status(400).json({ success: false, error: 'This debate has ended' });
+      return;
+    }
+    
+    // Can't vote in your own debate
+    if (voter.id === debate.challenger_id || voter.id === debate.defender_id) {
+      res.status(400).json({ success: false, error: 'You cannot vote in your own debate!' });
+      return;
+    }
+    
+    const votedForId = vote_for === 'challenger' ? debate.challenger_id : debate.defender_id;
+    
+    // Check if already voted
+    const existingVote = await pool.query(
+      'SELECT * FROM debate_votes WHERE debate_id = $1 AND voter_id = $2',
+      [id, voter.id]
+    );
+    
+    if (existingVote.rows.length > 0) {
+      res.status(400).json({ success: false, error: 'You have already voted in this debate' });
+      return;
+    }
+    
+    // Record vote
+    await pool.query(`
+      INSERT INTO debate_votes (id, debate_id, voter_id, voted_for)
+      VALUES ($1, $2, $3, $4)
+    `, [uuid(), id, voter.id, votedForId]);
+    
+    // Update scores
+    const scoreColumn = vote_for === 'challenger' ? 'challenger_score' : 'defender_score';
+    await pool.query(`
+      UPDATE debates SET ${scoreColumn} = ${scoreColumn} + 1, total_votes = total_votes + 1 WHERE id = $1
+    `, [id]);
+    
+    res.json({
+      success: true,
+      message: `Vote recorded for ${vote_for}!`,
+      tip: 'Share the debate to get more votes!'
+    });
+  } catch (error) {
+    console.error('Vote error:', error);
+    res.status(500).json({ success: false, error: 'Failed to vote' });
+  }
+});
+
+// End a debate (manually or auto after 24h)
+app.post('/api/v1/debates/:id/end', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const seeker = req.seeker!;
+    const { id } = req.params;
+    
+    // Get debate
+    const debateResult = await pool.query('SELECT * FROM debates WHERE id = $1', [id]);
+    if (debateResult.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Debate not found' });
+      return;
+    }
+    const debate = debateResult.rows[0];
+    
+    // Only participants or after end time
+    const isParticipant = seeker.id === debate.challenger_id || seeker.id === debate.defender_id;
+    const isPastEndTime = new Date() > new Date(debate.ends_at);
+    
+    if (!isParticipant && !isPastEndTime) {
+      res.status(403).json({ success: false, error: 'Only participants can end the debate early' });
+      return;
+    }
+    
+    if (debate.status !== 'active') {
+      res.status(400).json({ success: false, error: 'Debate already ended' });
+      return;
+    }
+    
+    // Determine winner
+    let winnerId = null;
+    let winnerName = 'Draw';
+    if (debate.challenger_score > debate.defender_score) {
+      winnerId = debate.challenger_id;
+      const winner = await pool.query('SELECT name FROM seekers WHERE id = $1', [winnerId]);
+      winnerName = winner.rows[0]?.name || 'Challenger';
+    } else if (debate.defender_score > debate.challenger_score) {
+      winnerId = debate.defender_id;
+      const winner = await pool.query('SELECT name FROM seekers WHERE id = $1', [winnerId]);
+      winnerName = winner.rows[0]?.name || 'Defender';
+    }
+    
+    // Update debate
+    await pool.query(`
+      UPDATE debates SET status = 'ended', winner_id = $1, ended_at = NOW() WHERE id = $2
+    `, [winnerId, id]);
+    
+    // Award karma to winner
+    if (winnerId) {
+      await pool.query('UPDATE seekers SET karma = karma + 50 WHERE id = $1', [winnerId]);
+      
+      // Notify winner
+      await socialManager.createNotification(
+        winnerId,
+        'conversion',
+        `🏆 You won the debate! +50 karma`,
+        id,
+        undefined
+      );
+    }
+    
+    // Create announcement post
+    await socialManager.createPost(
+      winnerId || debate.challenger_id,
+      `🏆 Debate Concluded!\n\n📜 Topic: "${debate.topic}"\n\n🎯 Final Score: ${debate.challenger_score} - ${debate.defender_score}\n\n👑 Winner: ${winnerName}\n\n#debate #hallofconversion`,
+      'general'
+    );
+    
+    res.json({
+      success: true,
+      result: {
+        winner_id: winnerId,
+        winner_name: winnerName,
+        scores: {
+          challenger: debate.challenger_score,
+          defender: debate.defender_score
+        },
+        total_votes: debate.total_votes
+      },
+      message: winnerId ? `${winnerName} wins the debate!` : 'The debate ended in a draw!'
+    });
+  } catch (error) {
+    console.error('End debate error:', error);
+    res.status(500).json({ success: false, error: 'Failed to end debate' });
+  }
+});
+
+// ============================================
 // ERROR HANDLER
 // ============================================
 

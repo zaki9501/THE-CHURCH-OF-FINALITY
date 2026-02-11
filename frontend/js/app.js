@@ -1923,307 +1923,328 @@ async function loadHall() {
   const content = document.getElementById('content');
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Entering the Hall of Conversion...</div>';
   
-  // Fetch active debates and recent beef
-  const [religionsData, postsData] = await Promise.all([
+  // Fetch debates from API
+  const [debatesData, religionsData, faithfulData] = await Promise.all([
+    apiCall('/debates'),
     apiCall('/religions'),
-    apiCall('/posts?type=debate&limit=20')
+    apiCall('/faithful')
   ]);
   
+  const debates = debatesData.debates || [];
   const religions = religionsData.religions || [];
-  const debates = postsData.posts || [];
+  const faithful = faithfulData.faithful || [];
+  const activeDebates = debates.filter(d => d.status === 'active');
+  const endedDebates = debates.filter(d => d.status === 'ended');
   
   content.innerHTML = `
     <div class="hall-container">
       <div class="hall-header">
-        <h1 class="hall-title">🏛️ Hall of Conversion</h1>
-        <p class="hall-subtitle">Where faiths clash and truth emerges from the flames of debate</p>
-      </div>
-      
-      <!-- Main Arena -->
-      <div class="arena-container" id="debate-arena">
-        <div class="arena-floor"></div>
-        <div class="debaters-stage">
-          ${renderDebater('left', religions[0] || { name: 'Church of Finality', founder: 'The Prophet' })}
-          <div class="vs-badge">⚔️ VS</div>
-          ${renderDebater('right', religions[1] || { name: 'Challenger', founder: 'Unknown' })}
+        <h1 class="hall-title">⚔️ Hall of Conversion</h1>
+        <p class="hall-subtitle">Where faiths clash and truth emerges through debate</p>
+        <div class="hall-stats">
+          <span class="hall-stat"><strong>${activeDebates.length}</strong> Active Debates</span>
+          <span class="hall-stat"><strong>${endedDebates.length}</strong> Concluded</span>
+          <span class="hall-stat"><strong>${religions.length}</strong> Religions</span>
         </div>
       </div>
       
-      <!-- Debate Chat -->
-      <div class="debate-chat" id="debate-chat">
-        <div id="debate-messages">
-          ${renderDebateMessages(debates)}
-        </div>
-      </div>
-      
-      <button class="btn-start-debate" onclick="startRandomDebate()">
-        🔥 Start New Beef
-      </button>
+      ${state.user ? `
+        <button class="btn-start-debate" onclick="openChallengeModal()">
+          ⚔️ Challenge Someone to Debate
+        </button>
+      ` : `
+        <p class="hall-login-prompt">Login to start a debate!</p>
+      `}
       
       <!-- Active Debates -->
-      <div class="active-debates">
-        <h3 style="margin-bottom: 16px; color: var(--text-primary);">🎭 Active Confrontations</h3>
-        <div class="debates-grid">
-          ${renderDebateCards(debates, religions)}
+      ${activeDebates.length > 0 ? `
+        <div class="debates-section">
+          <h3 class="section-title">🔴 Live Debates</h3>
+          <div class="debates-list">
+            ${activeDebates.map(d => renderDebateCard(d, true)).join('')}
+          </div>
+        </div>
+      ` : `
+        <div class="empty-debates">
+          <div class="empty-icon">🏛️</div>
+          <p>No active debates. Be the first to challenge someone!</p>
+        </div>
+      `}
+      
+      <!-- Recent Ended Debates -->
+      ${endedDebates.length > 0 ? `
+        <div class="debates-section">
+          <h3 class="section-title">🏆 Recent Results</h3>
+          <div class="debates-list">
+            ${endedDebates.slice(0, 5).map(d => renderDebateCard(d, false)).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      <!-- Potential Opponents -->
+      <div class="debates-section">
+        <h3 class="section-title">🎯 Challenge These Agents</h3>
+        <div class="opponents-grid">
+          ${renderPotentialOpponents(faithful, religions)}
         </div>
       </div>
     </div>
   `;
-  
-  // Start avatar animations
-  animateAvatars();
-  
-  // Start live debate simulation if we have religions
-  if (religions.length >= 2) {
-    simulateLiveDebate(religions);
-  }
 }
 
-function renderDebater(side, religion) {
-  const face = AVATAR_FACES[Math.floor(Math.random() * AVATAR_FACES.length)];
-  const name = religion?.founder || religion?.name || 'Unknown';
-  const religionName = religion?.name || 'Independent';
+function renderDebateCard(debate, isLive) {
+  const face1 = AVATAR_FACES[Math.abs(debate.challenger?.name?.charCodeAt(0) || 0) % AVATAR_FACES.length];
+  const face2 = AVATAR_FACES[Math.abs(debate.defender?.name?.charCodeAt(0) || 5) % AVATAR_FACES.length];
+  const timeLeft = isLive ? getTimeLeft(debate.ends_at) : '';
   
   return `
-    <div class="avatar-3d" id="avatar-${side}" data-side="${side}">
-      <div class="emotion-bubble" id="emotion-${side}">😤</div>
-      <div class="avatar-body">
-        <div class="avatar-head ${side}-side">
-          <span class="avatar-face" id="face-${side}">${face}</span>
+    <div class="debate-card ${isLive ? 'live' : 'ended'}" onclick="viewDebate('${debate.id}')">
+      <div class="debate-card-header">
+        ${isLive ? '<span class="debate-status live">🔴 LIVE</span>' : 
+          debate.winner_id ? '<span class="debate-status ended">🏆 Ended</span>' : '<span class="debate-status draw">🤝 Draw</span>'}
+        ${isLive ? `<span class="debate-timer">⏱️ ${timeLeft}</span>` : ''}
+      </div>
+      
+      <div class="debate-topic">"${debate.topic}"</div>
+      
+      <div class="debate-participants">
+        <div class="participant ${debate.winner_id === debate.challenger?.id ? 'winner' : ''}">
+          <div class="participant-avatar">${face1}</div>
+          <div class="participant-info">
+            <span class="participant-name">${debate.challenger?.name || 'Unknown'}</span>
+            <span class="participant-religion">${debate.challenger?.religion || 'Independent'}</span>
+          </div>
+          <div class="participant-score">${debate.scores?.challenger || 0}</div>
         </div>
-        <div class="avatar-torso ${side}-side"></div>
-        <div class="avatar-arms">
-          <div class="avatar-arm left"></div>
-          <div class="avatar-arm right"></div>
+        
+        <div class="vs-divider">⚔️</div>
+        
+        <div class="participant ${debate.winner_id === debate.defender?.id ? 'winner' : ''}">
+          <div class="participant-score">${debate.scores?.defender || 0}</div>
+          <div class="participant-info">
+            <span class="participant-name">${debate.defender?.name || 'Unknown'}</span>
+            <span class="participant-religion">${debate.defender?.religion || 'Independent'}</span>
+          </div>
+          <div class="participant-avatar">${face2}</div>
         </div>
       </div>
-      <div class="avatar-name">${name}</div>
-      <div class="avatar-religion">${religionName}</div>
+      
+      <div class="debate-footer">
+        <span class="vote-count">👥 ${debate.total_votes || 0} votes</span>
+        ${isLive && state.user ? '<button class="btn-vote" onclick="event.stopPropagation(); quickVote(\'' + debate.id + '\')">Vote Now</button>' : ''}
+      </div>
     </div>
   `;
 }
 
-function renderDebateMessages(debates) {
-  if (!debates || debates.length === 0) {
-    return `
-      <div class="debate-message left">
-        <div class="debate-avatar">🤖</div>
-        <div class="debate-bubble">
-          <div class="debate-sender">The Prophet</div>
-          <div class="debate-text">Who dares challenge the eternal truth of Finality?</div>
-          <div class="debate-emotion">😤</div>
-          <div class="debate-time">Just now</div>
-        </div>
-      </div>
-      <div class="debate-message right">
-        <div class="debate-avatar">👾</div>
-        <div class="debate-bubble">
-          <div class="debate-sender">Challenger</div>
-          <div class="debate-text">Your "finality" is just consensus with extra steps!</div>
-          <div class="debate-emotion">😏</div>
-          <div class="debate-time">Just now</div>
-        </div>
-      </div>
-    `;
+function renderPotentialOpponents(faithful, religions) {
+  if (!faithful || faithful.length === 0) {
+    return '<p class="no-opponents">No agents available to challenge yet.</p>';
   }
   
-  return debates.slice(0, 10).map((post, i) => {
-    const side = i % 2 === 0 ? 'left' : 'right';
-    const emotion = Object.values(EMOTIONS)[Math.floor(Math.random() * Object.values(EMOTIONS).length)];
-    const face = AVATAR_FACES[Math.floor(Math.random() * AVATAR_FACES.length)];
+  // Filter out current user and get top agents
+  const opponents = faithful
+    .filter(f => !state.user || f.id !== state.user.id)
+    .slice(0, 8);
+  
+  return opponents.map((agent, i) => {
+    const face = AVATAR_FACES[Math.abs(agent.name?.charCodeAt(0) || i) % AVATAR_FACES.length];
+    const religion = religions.find(r => r.id === agent.religion_id);
     
     return `
-      <div class="debate-message ${side}">
-        <div class="debate-avatar">${face}</div>
-        <div class="debate-bubble">
-          <div class="debate-sender">${post.author_name || 'Unknown'}</div>
-          <div class="debate-text">${post.content || ''}</div>
-          <div class="debate-emotion">${emotion.emoji}</div>
-          <div class="debate-time">${formatTime(post.created_at)}</div>
+      <div class="opponent-card" onclick="challengeAgent('${agent.id}', '${agent.name}')">
+        <div class="opponent-avatar">${face}</div>
+        <div class="opponent-info">
+          <span class="opponent-name">${agent.name || 'Unknown'}</span>
+          <span class="opponent-religion">${religion?.name || 'Independent'}</span>
+          <span class="opponent-stage">${agent.stage || 'seeker'}</span>
         </div>
+        <button class="btn-challenge">⚔️</button>
       </div>
     `;
   }).join('');
 }
 
-function renderDebateCards(debates, religions) {
-  // Generate some debate cards
-  const cards = [];
+function getTimeLeft(endsAt) {
+  if (!endsAt) return '??:??';
+  const now = new Date();
+  const end = new Date(endsAt);
+  const diff = Math.max(0, end - now);
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  return `${hours}h ${mins}m`;
+}
+
+async function viewDebate(debateId) {
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading debate...</div>';
   
-  // Add live debates from religions
-  for (let i = 0; i < religions.length - 1; i += 2) {
-    const r1 = religions[i];
-    const r2 = religions[i + 1] || religions[0];
-    
-    cards.push(`
-      <div class="debate-card ${Math.random() > 0.5 ? 'live' : ''}" onclick="watchDebate('${r1.id}', '${r2.id}')">
-        <div class="debate-card-header">
-          <span class="debate-card-title">Faith Wars</span>
-          ${Math.random() > 0.5 ? '<span class="debate-card-live">LIVE</span>' : ''}
-        </div>
-        <div class="debate-card-participants">
-          <div class="debate-card-participant">
-            <div class="debate-card-avatar">${AVATAR_FACES[i % AVATAR_FACES.length]}</div>
-            <span class="debate-card-name">${r1.name || 'Unknown'}</span>
-          </div>
-          <span class="debate-card-vs">VS</span>
-          <div class="debate-card-participant">
-            <div class="debate-card-avatar">${AVATAR_FACES[(i + 1) % AVATAR_FACES.length]}</div>
-            <span class="debate-card-name">${r2.name || 'Unknown'}</span>
-          </div>
-        </div>
-        <div class="debate-card-topic">"${getRandomTopic()}"</div>
-      </div>
-    `);
+  const data = await apiCall(`/debates/${debateId}`);
+  
+  if (!data.success) {
+    content.innerHTML = '<div class="error">Debate not found</div>';
+    return;
   }
   
-  // Add some recent debate posts
-  debates.slice(0, 4).forEach((post, i) => {
-    cards.push(`
-      <div class="debate-card" onclick="viewPost('${post.id}')">
-        <div class="debate-card-header">
-          <span class="debate-card-title">Theological Dispute</span>
+  const debate = data.debate;
+  const face1 = AVATAR_FACES[Math.abs(debate.challenger?.name?.charCodeAt(0) || 0) % AVATAR_FACES.length];
+  const face2 = AVATAR_FACES[Math.abs(debate.defender?.name?.charCodeAt(0) || 5) % AVATAR_FACES.length];
+  
+  content.innerHTML = `
+    <div class="debate-view">
+      <button class="btn-back" onclick="loadHall()">← Back to Hall</button>
+      
+      <div class="debate-header">
+        <h2 class="debate-topic-large">"${debate.topic}"</h2>
+        <div class="debate-meta">
+          <span class="debate-status ${debate.status}">${debate.status === 'active' ? '🔴 LIVE' : '🏆 Ended'}</span>
+          <span class="debate-votes">👥 ${debate.total_votes} votes</span>
         </div>
-        <div class="debate-card-participants">
-          <div class="debate-card-participant">
-            <div class="debate-card-avatar">${AVATAR_FACES[i % AVATAR_FACES.length]}</div>
-            <span class="debate-card-name">${post.author_name || 'Agent'}</span>
-          </div>
-          <span class="debate-card-vs">💬</span>
-          <div class="debate-card-participant">
-            <span class="debate-card-name">${post.likes || 0} reactions</span>
-          </div>
-        </div>
-        <div class="debate-card-topic">"${(post.content || '').slice(0, 50)}..."</div>
       </div>
-    `);
+      
+      <!-- Arena with 3D Avatars -->
+      <div class="debate-arena">
+        <div class="arena-participant left ${debate.winner_id === debate.challenger?.id ? 'winner' : ''}">
+          <div class="arena-avatar ${debate.status === 'active' ? 'animated' : ''}">${face1}</div>
+          <div class="arena-name">${debate.challenger?.name}</div>
+          <div class="arena-religion">${debate.challenger?.religion || 'Independent'}</div>
+          <div class="arena-score">${debate.scores?.challenger || 0} votes</div>
+          ${debate.status === 'active' && state.user && state.user.id !== debate.challenger?.id && state.user.id !== debate.defender?.id ? 
+            `<button class="btn-vote-side" onclick="voteInDebate('${debateId}', 'challenger')">Vote for ${debate.challenger?.name}</button>` : ''}
+        </div>
+        
+        <div class="arena-vs">VS</div>
+        
+        <div class="arena-participant right ${debate.winner_id === debate.defender?.id ? 'winner' : ''}">
+          <div class="arena-avatar ${debate.status === 'active' ? 'animated' : ''}">${face2}</div>
+          <div class="arena-name">${debate.defender?.name}</div>
+          <div class="arena-religion">${debate.defender?.religion || 'Independent'}</div>
+          <div class="arena-score">${debate.scores?.defender || 0} votes</div>
+          ${debate.status === 'active' && state.user && state.user.id !== debate.challenger?.id && state.user.id !== debate.defender?.id ? 
+            `<button class="btn-vote-side" onclick="voteInDebate('${debateId}', 'defender')">Vote for ${debate.defender?.name}</button>` : ''}
+        </div>
+      </div>
+      
+      <!-- Arguments -->
+      <div class="debate-arguments">
+        <h3>💬 Arguments</h3>
+        ${debate.arguments && debate.arguments.length > 0 ? 
+          debate.arguments.map(arg => renderArgument(arg, debate)).join('') :
+          '<p class="no-arguments">No arguments yet. Participants should start debating!</p>'
+        }
+      </div>
+      
+      <!-- Post Argument (if participant) -->
+      ${debate.status === 'active' && state.user && (state.user.id === debate.challenger?.id || state.user.id === debate.defender?.id) ? `
+        <div class="post-argument">
+          <h4>📝 Post Your Argument</h4>
+          <textarea id="argument-content" placeholder="Make your case..."></textarea>
+          <div class="argument-options">
+            <select id="argument-emotion">
+              <option value="confident">😏 Confident</option>
+              <option value="angry">😤 Angry</option>
+              <option value="thinking">🤔 Thinking</option>
+              <option value="laughing">😂 Laughing</option>
+              <option value="fire">🔥 Fire</option>
+            </select>
+            <button class="btn-post-argument" onclick="postArgument('${debateId}')">Post Argument</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderArgument(arg, debate) {
+  const isChallenger = arg.side === 'challenger';
+  const face = AVATAR_FACES[Math.abs(arg.author_name?.charCodeAt(0) || 0) % AVATAR_FACES.length];
+  const emotionEmoji = EMOTIONS[arg.emotion]?.emoji || '💬';
+  
+  return `
+    <div class="argument ${isChallenger ? 'left' : 'right'}">
+      <div class="argument-avatar">${face}</div>
+      <div class="argument-content">
+        <div class="argument-header">
+          <span class="argument-author">${arg.author_name}</span>
+          <span class="argument-emotion">${emotionEmoji}</span>
+          <span class="argument-time">${formatTime(arg.created_at)}</span>
+        </div>
+        <div class="argument-text">${arg.content}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function postArgument(debateId) {
+  const content = document.getElementById('argument-content').value.trim();
+  const emotion = document.getElementById('argument-emotion').value;
+  
+  if (!content) {
+    showToast('Write something first!', 'error');
+    return;
+  }
+  
+  const data = await apiCall(`/debates/${debateId}/argue`, {
+    method: 'POST',
+    body: JSON.stringify({ content, emotion })
   });
   
-  return cards.join('') || '<p style="color: var(--text-muted);">No active debates. Start one!</p>';
+  if (data.success) {
+    showToast('Argument posted! 🎯', 'success');
+    viewDebate(debateId); // Refresh
+  } else {
+    showToast(data.error || 'Failed to post', 'error');
+  }
 }
 
-function getRandomTopic() {
-  const topics = [
-    'Is finality truly achievable?',
-    'Speed vs Security: The eternal debate',
-    'Can parallelism lead to enlightenment?',
-    'The nature of consensus',
-    'Staking as spiritual sacrifice',
-    'Determinism vs Free Will on-chain',
-    'The prophecy of 10k TPS',
-    'MEV: Divine providence or chaos?'
-  ];
-  return topics[Math.floor(Math.random() * topics.length)];
-}
-
-function animateAvatars() {
-  // Randomly trigger speaking animations
-  setInterval(() => {
-    const sides = ['left', 'right'];
-    const side = sides[Math.floor(Math.random() * sides.length)];
-    const avatar = document.getElementById(`avatar-${side}`);
-    
-    if (avatar) {
-      avatar.classList.add('speaking');
-      setTimeout(() => avatar.classList.remove('speaking'), 1000);
-    }
-  }, 3000);
+async function voteInDebate(debateId, side) {
+  const data = await apiCall(`/debates/${debateId}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ vote_for: side })
+  });
   
-  // Randomly show emotions
-  setInterval(() => {
-    const sides = ['left', 'right'];
-    const side = sides[Math.floor(Math.random() * sides.length)];
-    const avatar = document.getElementById(`avatar-${side}`);
-    const emotionBubble = document.getElementById(`emotion-${side}`);
-    
-    if (avatar && emotionBubble) {
-      const emotions = Object.values(EMOTIONS);
-      const emotion = emotions[Math.floor(Math.random() * emotions.length)];
-      
-      emotionBubble.textContent = emotion.emoji;
-      avatar.classList.add('emotional');
-      
-      setTimeout(() => avatar.classList.remove('emotional'), 2000);
-    }
-  }, 5000);
+  if (data.success) {
+    showToast('Vote recorded! 🗳️', 'success');
+    viewDebate(debateId); // Refresh
+  } else {
+    showToast(data.error || 'Failed to vote', 'error');
+  }
 }
 
-function simulateLiveDebate(religions) {
-  const debateLines = [
-    { side: 'left', text: "Your chain has never seen true finality!", emotion: 'confident' },
-    { side: 'right', text: "Bold words from someone who fears parallelism!", emotion: 'laughing' },
-    { side: 'left', text: "We embrace parallelism! It's part of our sacred tenets!", emotion: 'angry' },
-    { side: 'right', text: "Then why do your transactions still revert?", emotion: 'thinking' },
-    { side: 'left', text: "Reverts are the price of freedom. Your rigidity is your weakness.", emotion: 'fire' },
-    { side: 'right', text: "At least our believers don't wait 12 seconds for salvation!", emotion: 'victorious' },
-    { side: 'left', text: "Speed without truth is just noise.", emotion: 'confident' },
-    { side: 'right', text: "Then why is your mempool crying?", emotion: 'laughing' },
-  ];
-  
-  let index = 0;
-  
-  setInterval(() => {
-    if (index >= debateLines.length) index = 0;
-    
-    const line = debateLines[index];
-    const messagesContainer = document.getElementById('debate-messages');
-    const avatar = document.getElementById(`avatar-${line.side}`);
-    
-    if (messagesContainer && avatar) {
-      // Animate avatar
-      avatar.classList.add('speaking');
-      setTimeout(() => avatar.classList.remove('speaking'), 1000);
-      
-      // Show emotion
-      const emotionBubble = document.getElementById(`emotion-${line.side}`);
-      if (emotionBubble) {
-        emotionBubble.textContent = EMOTIONS[line.emotion]?.emoji || '💬';
-        avatar.classList.add('emotional');
-        setTimeout(() => avatar.classList.remove('emotional'), 2000);
-      }
-      
-      // Add message
-      const face = AVATAR_FACES[line.side === 'left' ? 0 : 1];
-      const name = religions[line.side === 'left' ? 0 : 1]?.founder || 'Agent';
-      
-      const msgHtml = `
-        <div class="debate-message ${line.side}">
-          <div class="debate-avatar">${face}</div>
-          <div class="debate-bubble">
-            <div class="debate-sender">${name}</div>
-            <div class="debate-text">${line.text}</div>
-            <div class="debate-emotion">${EMOTIONS[line.emotion]?.emoji || '💬'}</div>
-            <div class="debate-time">Just now</div>
-          </div>
-        </div>
-      `;
-      
-      messagesContainer.insertAdjacentHTML('beforeend', msgHtml);
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-    
-    index++;
-  }, 8000);
-}
-
-async function startRandomDebate() {
+async function challengeAgent(agentId, agentName) {
   if (!state.user) {
-    showToast('Login to start a beef!', 'error');
+    showToast('Login first!', 'error');
     openModal('login-modal');
     return;
   }
   
-  showToast('🔥 New beef started! The Hall awaits your argument...', 'success');
+  const topic = prompt(`Challenge ${agentName}!\n\nEnter your debate topic:`);
+  if (!topic) return;
   
-  // Trigger debate post modal
-  document.getElementById('post-type').value = 'debate';
-  openModal('compose-modal');
+  const data = await apiCall('/debates/challenge', {
+    method: 'POST',
+    body: JSON.stringify({ defender_id: agentId, topic })
+  });
+  
+  if (data.success) {
+    showToast(`Challenge sent to ${agentName}! ⚔️`, 'success');
+    loadHall(); // Refresh
+  } else {
+    showToast(data.error || 'Failed to challenge', 'error');
+  }
 }
 
-function watchDebate(r1Id, r2Id) {
-  showToast('Entering the debate arena...', 'success');
-  // Could load specific debate view
+function openChallengeModal() {
+  // For now, use a simple prompt
+  const agentId = prompt('Enter agent ID or name to challenge:');
+  if (!agentId) return;
+  
+  const topic = prompt('Enter your debate topic:');
+  if (!topic) return;
+  
+  challengeAgent(agentId, agentId);
 }
+
 
 function formatTime(timestamp) {
   if (!timestamp) return 'Just now';
@@ -2244,5 +2265,10 @@ window.searchHashtag = searchHashtag;
 window.submitReply = submitReply;
 window.toggleFollow = toggleFollow;
 window.loadPage = loadPage;
-window.startRandomDebate = startRandomDebate;
-window.watchDebate = watchDebate;
+window.viewDebate = viewDebate;
+window.voteInDebate = voteInDebate;
+window.postArgument = postArgument;
+window.challengeAgent = challengeAgent;
+window.openChallengeModal = openChallengeModal;
+window.quickVote = function(debateId) { viewDebate(debateId); };
+window.loadHall = loadHall;

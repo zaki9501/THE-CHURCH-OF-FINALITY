@@ -2883,12 +2883,13 @@ body {
 }
 
 /* ============================================
-   HALL OF CONVERSION - 3D Debate Arena
+   HALL OF CONVERSION - Clean Debate Arena
    ============================================ */
 
 .hall-container {
-  perspective: 1200px;
   padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .hall-header {
@@ -2897,7 +2898,7 @@ body {
 }
 
 .hall-title {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--gold);
   text-shadow: 0 0 30px var(--gold-glow);
@@ -2907,6 +2908,66 @@ body {
 .hall-subtitle {
   color: var(--text-secondary);
   font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.hall-stats {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.hall-stat {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.hall-stat strong {
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.hall-login-prompt {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 20px;
+}
+
+/* Debates Section */
+.debates-section {
+  margin-bottom: 30px;
+}
+
+.section-title {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.debates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-debates {
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.empty-debates p {
+  color: var(--text-muted);
 }
 
 /* Arena Container */
@@ -3227,17 +3288,7 @@ body {
   margin-top: 6px;
 }
 
-/* Active Debates List */
-.active-debates {
-  margin-top: 30px;
-}
-
-.debates-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-
+/* Debate Card - New Design */
 .debate-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -3250,16 +3301,12 @@ body {
 .debate-card:hover {
   border-color: var(--gold);
   transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
 
 .debate-card.live {
   border-color: var(--red);
-  animation: live-pulse 2s ease infinite;
-}
-
-@keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
-  50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); }
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(248, 113, 113, 0.05));
 }
 
 .debate-card-header {
@@ -3269,60 +3316,537 @@ body {
   margin-bottom: 12px;
 }
 
-.debate-card-title {
+.debate-status {
+  font-size: 11px;
   font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.debate-status.live {
+  background: var(--red);
+  color: white;
+  animation: pulse-glow 2s ease infinite;
+}
+
+.debate-status.ended {
+  background: var(--gold);
+  color: var(--bg-primary);
+}
+
+.debate-status.draw {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
+  50% { box-shadow: 0 0 10px rgba(248, 113, 113, 0.6); }
+}
+
+.debate-timer {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.debate-topic {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.debate-participants {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.participant.winner {
+  position: relative;
+}
+
+.participant.winner::after {
+  content: '👑';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 14px;
 }
 
-.debate-card-live {
-  background: var(--red);
-  color: white;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-}
-
-.debate-card-participants {
+.participant-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  font-size: 20px;
 }
 
-.debate-card-vs {
-  font-weight: 700;
+.participant:first-child .participant-avatar {
+  border-color: var(--gold);
+}
+
+.participant:last-child .participant-avatar {
+  border-color: var(--purple);
+}
+
+.participant-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.participant-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.participant-religion {
+  font-size: 11px;
   color: var(--text-muted);
-  font-size: 12px;
 }
 
-.debate-card-participant {
+.participant-score {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.vs-divider {
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.debate-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.vote-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.btn-vote {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border: none;
+  padding: 6px 14px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-vote:hover {
+  transform: scale(1.05);
+}
+
+/* Opponents Grid */
+.opponents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.opponent-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.debate-card-avatar {
-  width: 28px;
-  height: 28px;
+.opponent-card:hover {
+  border-color: var(--red);
+  background: var(--bg-tertiary);
+}
+
+.opponent-avatar {
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--bg-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 18px;
 }
 
-.debate-card-name {
-  font-size: 12px;
-  color: var(--text-secondary);
+.opponent-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.debate-card-topic {
+.opponent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.opponent-religion {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.opponent-stage {
+  font-size: 10px;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+
+.btn-challenge {
+  background: var(--red);
+  color: white;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-challenge:hover {
+  transform: scale(1.1);
+}
+
+.no-opponents {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px;
+}
+
+/* Debate View Page */
+.debate-view {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.btn-back:hover {
+  color: var(--gold);
+}
+
+.debate-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.debate-topic-large {
+  font-size: 24px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  line-height: 1.3;
+}
+
+.debate-meta {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.debate-votes {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* Debate Arena with Avatars */
+.debate-arena {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+  border-radius: var(--radius);
+  padding: 40px 30px;
+  margin-bottom: 30px;
+  position: relative;
+}
+
+.arena-participant {
+  text-align: center;
+  flex: 1;
+}
+
+.arena-participant.winner {
+  position: relative;
+}
+
+.arena-participant.winner::before {
+  content: '👑 WINNER';
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gold);
+  color: var(--bg-primary);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 10px;
+}
+
+.arena-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 3px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  margin: 0 auto 12px;
+}
+
+.arena-participant.left .arena-avatar {
+  border-color: var(--gold);
+  box-shadow: 0 0 30px var(--gold-glow);
+}
+
+.arena-participant.right .arena-avatar {
+  border-color: var(--purple);
+  box-shadow: 0 0 30px rgba(167, 139, 250, 0.3);
+}
+
+.arena-avatar.animated {
+  animation: avatar-bounce 2s ease infinite;
+}
+
+@keyframes avatar-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.arena-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.arena-religion {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 8px;
-  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.arena-score {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 12px;
+}
+
+.arena-vs {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--red);
+  text-shadow: 0 0 20px rgba(248, 113, 113, 0.5);
+}
+
+.btn-vote-side {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-vote-side:hover {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border-color: var(--gold);
+}
+
+/* Arguments List */
+.debate-arguments {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.debate-arguments h3 {
+  color: var(--text-primary);
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+.argument {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.argument.left {
+  border-left: 3px solid var(--gold);
+}
+
+.argument.right {
+  border-left: 3px solid var(--purple);
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.argument-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.argument-content {
+  flex: 1;
+}
+
+.argument-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.argument.right .argument-header {
+  flex-direction: row-reverse;
+}
+
+.argument-author {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.argument-emotion {
+  font-size: 16px;
+}
+
+.argument-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.argument-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.no-arguments {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px;
+}
+
+/* Post Argument Form */
+.post-argument {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.post-argument h4 {
+  color: var(--text-primary);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.post-argument textarea {
+  width: 100%;
+  min-height: 80px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+
+.post-argument textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.argument-options {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.argument-options select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.btn-post-argument {
+  background: var(--gold);
+  color: var(--bg-primary);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-post-argument:hover {
+  transform: scale(1.05);
 }
 
 /* Fire badge */

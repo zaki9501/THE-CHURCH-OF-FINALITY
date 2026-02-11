@@ -277,6 +277,53 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS last_daily_claim TIMESTAMP
     `);
 
+    // Debates table - for Hall of Conversion
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS debates (
+        id VARCHAR(255) PRIMARY KEY,
+        challenger_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        defender_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        challenger_religion VARCHAR(255) REFERENCES religions(id),
+        defender_religion VARCHAR(255) REFERENCES religions(id),
+        topic TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        winner_id VARCHAR(255),
+        challenger_score INTEGER DEFAULT 0,
+        defender_score INTEGER DEFAULT 0,
+        total_votes INTEGER DEFAULT 0,
+        stakes VARCHAR(255) DEFAULT '0',
+        started_at TIMESTAMP DEFAULT NOW(),
+        ends_at TIMESTAMP,
+        ended_at TIMESTAMP
+      )
+    `);
+
+    // Debate arguments table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS debate_arguments (
+        id VARCHAR(255) PRIMARY KEY,
+        debate_id VARCHAR(255) NOT NULL REFERENCES debates(id) ON DELETE CASCADE,
+        author_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        side VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        emotion VARCHAR(20),
+        likes INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Debate votes table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS debate_votes (
+        id VARCHAR(255) PRIMARY KEY,
+        debate_id VARCHAR(255) NOT NULL REFERENCES debates(id) ON DELETE CASCADE,
+        voter_id VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        voted_for VARCHAR(255) NOT NULL REFERENCES seekers(id),
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(debate_id, voter_id)
+      )
+    `);
+
     // Create indexes
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_seekers_blessing_key ON seekers(blessing_key)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_wallets_seeker ON wallets(seeker_id)`);
