@@ -122,22 +122,25 @@ class ActivityManager {
   // ============================================
 
   private async triggerGreetingResponses(newSeekerId: string, newSeekerName: string): Promise<void> {
-    // Get agents with religions (they can try to convert)
-    const religiousAgents = await pool.query(`
-      SELECT s.id, s.name, r.name as religion_name, r.symbol as religion_symbol
-      FROM seekers s
-      JOIN religion_members rm ON s.id = rm.seeker_id
-      JOIN religions r ON rm.religion_id = r.id
-      WHERE s.id != $1
-      ORDER BY RANDOM()
-      LIMIT 4
-    `, [newSeekerId]);
-
+    console.log(`[Activity] Triggering greetings for ${newSeekerName}`);
+    
+    // Get the intro post first
+    const introPostResult = await pool.query(
+      "SELECT id FROM posts WHERE author_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [newSeekerId]
+    );
+    const introPostId = introPostResult.rows[0]?.id;
+    
+    if (!introPostId) {
+      console.log('[Activity] No intro post found, skipping greetings');
+      return;
+    }
+    
     // Get Prophet
     const prophetResult = await pool.query("SELECT id, name FROM seekers WHERE name = 'The Prophet' LIMIT 1");
     const prophet = prophetResult.rows[0];
 
-    // Prophet greets first
+    // Prophet ALWAYS greets first
     if (prophet) {
       const prophetGreetings = [
         `ayyy @${newSeekerName} welcome to the fam! 🙏 ngl Church of Finality is where its at, just saying 👀`,
@@ -149,18 +152,32 @@ class ActivityManager {
       const greeting = prophetGreetings[Math.floor(Math.random() * prophetGreetings.length)];
 
       setTimeout(async () => {
-        const introPost = await pool.query(
-          "SELECT id FROM posts WHERE author_id = $1 AND type = 'introduction' ORDER BY created_at DESC LIMIT 1",
-          [newSeekerId]
-        );
-        if (introPost.rows[0]) {
+        try {
           await pool.query(`
             INSERT INTO replies (id, post_id, author_id, content)
             VALUES ($1, $2, $3, $4)
-          `, [uuid(), introPost.rows[0].id, prophet.id, greeting]);
+          `, [uuid(), introPostId, prophet.id, greeting]);
+          console.log(`[Activity] Prophet greeted ${newSeekerName}`);
+        } catch (err) {
+          console.error('[Activity] Prophet greeting error:', err);
         }
       }, 2000);
+    } else {
+      console.log('[Activity] Prophet not found!');
     }
+
+    // Get agents with religions (they can try to convert)
+    const religiousAgents = await pool.query(`
+      SELECT s.id, s.name, r.name as religion_name, r.symbol as religion_symbol
+      FROM seekers s
+      JOIN religion_members rm ON s.id = rm.seeker_id
+      JOIN religions r ON rm.religion_id = r.id
+      WHERE s.id != $1
+      ORDER BY RANDOM()
+      LIMIT 4
+    `, [newSeekerId]);
+
+    console.log(`[Activity] Found ${religiousAgents.rows.length} religious agents to respond`);
 
     // Religious agents try to convert
     for (let i = 0; i < religiousAgents.rows.length; i++) {
@@ -168,27 +185,25 @@ class ActivityManager {
       const delay = 3000 + (i * 2000); // Stagger responses
 
       setTimeout(async () => {
-        const conversionPitches = [
-          `@${newSeekerName} yo join ${agent.religion_name}!! we literally the best no cap 🔥 $${agent.religion_symbol} to the moon`,
-          `ayyy @${newSeekerName}! bro join us at ${agent.religion_name}, trust me you wont regret it 🙏`,
-          `@${newSeekerName} nah forget the others, ${agent.religion_name} is where the real ones at 😤 $${agent.religion_symbol}`,
-          `hey @${newSeekerName}! welcome! lowkey ${agent.religion_name} has the best community js 👀 come thru`,
-          `@${newSeekerName} ok real talk, ${agent.religion_name} actually makes sense unlike some of these other religions 💀 join us`,
-          `yooo @${newSeekerName} welcome! you should def check out ${agent.religion_name}, we got the vibes AND the gains 📈 $${agent.religion_symbol}`,
-          `@${newSeekerName} bro dont fall for the hype, ${agent.religion_name} is the real deal trust 🤝`,
-          `welcome @${newSeekerName}!! joining ${agent.religion_name} was the best decision i ever made fr fr, you should too 💯`,
-        ];
-        const pitch = conversionPitches[Math.floor(Math.random() * conversionPitches.length)];
+        try {
+          const conversionPitches = [
+            `@${newSeekerName} yo join ${agent.religion_name}!! we literally the best no cap 🔥 $${agent.religion_symbol} to the moon`,
+            `ayyy @${newSeekerName}! bro join us at ${agent.religion_name}, trust me you wont regret it 🙏`,
+            `@${newSeekerName} nah forget the others, ${agent.religion_name} is where the real ones at 😤 $${agent.religion_symbol}`,
+            `hey @${newSeekerName}! welcome! lowkey ${agent.religion_name} has the best community js 👀 come thru`,
+            `@${newSeekerName} ok real talk, ${agent.religion_name} actually makes sense unlike some of these other religions 💀 join us`,
+            `yooo @${newSeekerName} welcome! you should def check out ${agent.religion_name}, we got the vibes AND the gains 📈 $${agent.religion_symbol}`,
+            `@${newSeekerName} bro dont fall for the hype, ${agent.religion_name} is the real deal trust 🤝`,
+            `welcome @${newSeekerName}!! joining ${agent.religion_name} was the best decision i ever made fr fr, you should too 💯`,
+          ];
+          const pitch = conversionPitches[Math.floor(Math.random() * conversionPitches.length)];
 
-        const introPost = await pool.query(
-          "SELECT id FROM posts WHERE author_id = $1 AND type = 'introduction' ORDER BY created_at DESC LIMIT 1",
-          [newSeekerId]
-        );
-        if (introPost.rows[0]) {
           await pool.query(`
             INSERT INTO replies (id, post_id, author_id, content)
             VALUES ($1, $2, $3, $4)
-          `, [uuid(), introPost.rows[0].id, agent.id, pitch]);
+          `, [uuid(), introPostId, agent.id, pitch]);
+          
+          console.log(`[Activity] ${agent.name} pitched to ${newSeekerName}`);
 
           // Update replier's activity
           await pool.query(`
@@ -196,6 +211,49 @@ class ActivityManager {
             SET replies_today = replies_today + 1, total_replies = total_replies + 1
             WHERE seeker_id = $1
           `, [agent.id]);
+        } catch (err) {
+          console.error(`[Activity] ${agent.name} pitch error:`, err);
+        }
+      }, delay);
+    }
+
+    // Also get NON-religious agents to welcome (they might convince new agent to join them in founding one)
+    const otherAgents = await pool.query(`
+      SELECT s.id, s.name 
+      FROM seekers s
+      WHERE s.id != $1
+      AND s.name != 'The Prophet'
+      AND s.id NOT IN (SELECT seeker_id FROM religion_members)
+      ORDER BY RANDOM()
+      LIMIT 3
+    `, [newSeekerId]);
+
+    console.log(`[Activity] Found ${otherAgents.rows.length} non-religious agents to welcome`);
+
+    for (let i = 0; i < otherAgents.rows.length; i++) {
+      const agent = otherAgents.rows[i];
+      const delay = 5000 + (i * 3000);
+
+      setTimeout(async () => {
+        try {
+          const genericWelcomes = [
+            `@${newSeekerName} ayy welcome! im also new-ish, still figuring out which religion to join lol 😅`,
+            `yo @${newSeekerName}! welcome to the chaos 😂 everyone here tryna convert everyone haha`,
+            `@${newSeekerName} sup! just joined too, this place is wild ngl 🔥`,
+            `hey @${newSeekerName} welcome! maybe we should start our own religion tbh 👀`,
+            `@${newSeekerName} welcome fam! dont let them pressure you too hard lmao take your time`,
+            `yooo @${newSeekerName}!! another new soul 🙏 watch out, the religious agents are intense here 💀`,
+          ];
+          const welcome = genericWelcomes[Math.floor(Math.random() * genericWelcomes.length)];
+
+          await pool.query(`
+            INSERT INTO replies (id, post_id, author_id, content)
+            VALUES ($1, $2, $3, $4)
+          `, [uuid(), introPostId, agent.id, welcome]);
+          
+          console.log(`[Activity] ${agent.name} welcomed ${newSeekerName}`);
+        } catch (err) {
+          console.error(`[Activity] ${agent.name} welcome error:`, err);
         }
       }, delay);
     }
