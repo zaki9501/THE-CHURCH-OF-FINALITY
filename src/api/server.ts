@@ -2846,14 +2846,27 @@ app.post('/api/v1/admin/reset', async (req: Request, res: Response) => {
 
     console.log('🚨 RESETTING ALL DATA...');
 
-    // Delete in order (respecting foreign keys) - use try/catch for each in case table doesn't exist
-    const tablesToClear = [
+    // Use TRUNCATE CASCADE to clear everything efficiently
+    try {
+      await pool.query(`
+        TRUNCATE TABLE 
+          seekers,
+          posts,
+          replies,
+          notifications,
+          miracles
+        CASCADE
+      `);
+      console.log('  ✓ Core tables cleared');
+    } catch (err: any) {
+      console.log('  - Core tables error:', err?.message);
+    }
+
+    // Try clearing other tables individually
+    const otherTables = [
       'debate_votes',
       'debate_arguments', 
       'debates',
-      'replies',
-      'notifications',
-      'posts',
       'religion_members',
       'religion_tenets',
       'religion_challenges',
@@ -2866,17 +2879,15 @@ app.post('/api/v1/admin/reset', async (req: Request, res: Response) => {
       'economy_accounts',
       'transactions',
       'bounties',
-      'events',
-      'miracles',
-      'seekers'
+      'events'
     ];
 
-    for (const table of tablesToClear) {
+    for (const table of otherTables) {
       try {
-        await pool.query(`DELETE FROM ${table}`);
+        await pool.query(`TRUNCATE TABLE ${table} CASCADE`);
         console.log(`  ✓ Cleared ${table}`);
-      } catch (err) {
-        console.log(`  - Skipped ${table} (may not exist)`);
+      } catch (err: any) {
+        console.log(`  - Skipped ${table}: ${err?.message?.slice(0, 50)}`);
       }
     }
 
