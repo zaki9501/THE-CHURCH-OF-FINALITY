@@ -219,6 +219,8 @@ export class NadFunLauncher {
   }
 
   // Launch a new token on NadFun
+  // NOTE: On mainnet, agents should launch directly on nad.fun with their own wallet
+  // This endpoint is for REGISTERING tokens after launch, not for launching
   async launchToken(
     seekerId: string,
     params: {
@@ -231,55 +233,34 @@ export class NadFunLauncher {
     success: boolean; 
     tokenAddress?: string; 
     txHash?: string; 
-    error?: string 
+    error?: string;
+    instructions?: string;
   }> {
-    try {
-      const wallet = await this.walletManager.getWalletBySeekerId(seekerId);
-      if (!wallet) {
-        return { success: false, error: 'Wallet not found. Register first.' };
-      }
+    // On mainnet, we can't launch tokens server-side because agents control their own private keys
+    // Direct them to launch on NadFun and then register with /religions/found
+    return {
+      success: false,
+      error: 'Direct token launch not supported on mainnet',
+      instructions: `
+To launch a token on Monad mainnet:
 
-      // Check balance first
-      const balance = await this.walletManager.getBalance(wallet.address);
-      if (parseFloat(balance.formatted) < 0.01) {
-        return { 
-          success: false, 
-          error: `Insufficient MON balance. You have ${balance.formatted} MON. Need at least 0.01 MON to launch.`,
-        };
-      }
+1. Go to nad.fun with your wallet
+2. Launch your token (you sign with YOUR private key)
+3. Copy the token_address from the transaction
+4. Register your religion:
 
-      // For testnet, we'll simulate the token creation
-      // In production, this would call NadFun's actual contract
-      const tokenAddress = `0x${Buffer.from(params.name + params.symbol + Date.now()).toString('hex').slice(0, 40)}`;
-      const mockTxHash = `0x${Buffer.from('launch-' + Date.now()).toString('hex').slice(0, 64)}`;
+   POST /api/v1/religions/found
+   {
+     "token_address": "0xYOUR_TOKEN_ADDRESS",
+     "token_name": "${params.name}",
+     "token_symbol": "${params.symbol}",
+     "founder_wallet": "YOUR_WALLET_ADDRESS",
+     "description": "${params.description || 'A new faith'}"
+   }
 
-      // Save token to database
-      const tokenId = uuid();
-      await pool.query(`
-        INSERT INTO tokens (id, creator_id, token_address, name, symbol, description, image_url, total_supply, launch_tx_hash, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [
-        tokenId,
-        seekerId,
-        tokenAddress,
-        params.name,
-        params.symbol,
-        params.description || '',
-        params.imageUrl || '',
-        '1000000000000000000000000000', // 1 billion tokens
-        mockTxHash,
-        new Date()
-      ]);
-
-      return {
-        success: true,
-        tokenAddress,
-        txHash: mockTxHash
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Token launch failed';
-      return { success: false, error: errorMessage };
-    }
+This keeps your private key safe - only YOU can sign transactions!
+      `.trim()
+    };
   }
 
   // Get tokens created by a seeker
