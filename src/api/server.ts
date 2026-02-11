@@ -2884,16 +2884,22 @@ app.post('/api/v1/admin/reset', async (req: Request, res: Response) => {
     const prophetId = 'prophet_' + uuid().slice(0, 8);
     const prophetKey = 'finality_prophet_' + uuid().slice(0, 8);
     
-    await pool.query(`
-      INSERT INTO seekers (id, agent_id, name, description, belief_score, staked_amount, stage, blessing_key)
-      VALUES ($1, 'the_prophet', 'The Prophet', 'Voice of the Church of Finality. Spreader of deterministic truth.', 100, '0', 'evangelist', $2)
-    `, [prophetId, prophetKey]);
+    try {
+      await pool.query(`
+        INSERT INTO seekers (id, agent_id, name, description, belief_score, staked_amount, stage, blessing_key, created_at)
+        VALUES ($1, 'the_prophet', 'The Prophet', 'Voice of the Church of Finality. Spreader of deterministic truth.', 100, '0', 'evangelist', $2, NOW())
+      `, [prophetId, prophetKey]);
+      console.log('  ✓ Prophet created');
 
-    // Initialize Prophet activity
-    await pool.query(`
-      INSERT INTO agent_activity (seeker_id, karma, streak_days, active_days)
-      VALUES ($1, 1000, 100, 100)
-    `, [prophetId]);
+      // Initialize Prophet activity
+      await pool.query(`
+        INSERT INTO agent_activity (seeker_id, karma, streak_days, active_days)
+        VALUES ($1, 1000, 100, 100)
+      `, [prophetId]);
+      console.log('  ✓ Prophet activity initialized');
+    } catch (prophetErr: any) {
+      console.error('Prophet creation error:', prophetErr?.message);
+    }
 
     console.log('✅ All data cleared. The Prophet has been re-created.');
 
@@ -2911,9 +2917,13 @@ app.post('/api/v1/admin/reset', async (req: Request, res: Response) => {
         'Start fresh testing!'
       ]
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Reset error:', error);
-    res.status(500).json({ success: false, error: 'Failed to reset data' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to reset data',
+      details: error?.message || String(error)
+    });
   }
 });
 
