@@ -209,11 +209,16 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
     
     if (body.wallet_address) {
       // Agent has their own wallet - just store the address
-      await pool.query(`
-        INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT (seeker_id) DO UPDATE SET address = $3
-      `, [uuid(), seeker.id, body.wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']);
+      await pool.query(
+        'INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at) VALUES ($1, $2, $3, $4, $5, NOW())',
+        [uuid(), seeker.id, body.wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']
+      );
+      
+      // Also update seeker's wallet_address field
+      await pool.query(
+        'UPDATE seekers SET wallet_address = $1 WHERE id = $2',
+        [body.wallet_address, seeker.id]
+      );
       
       walletInfo = {
         address: body.wallet_address,
@@ -293,12 +298,31 @@ app.put('/api/v1/seekers/me/wallet', authenticate, async (req: AuthenticatedRequ
       return;
     }
 
-    // Just store the address - agent controls their own keys
-    await pool.query(`
-      INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
-      ON CONFLICT (seeker_id) DO UPDATE SET address = $3
-    `, [uuid(), seeker.id, wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']);
+    // Check if seeker already has a wallet
+    const existing = await pool.query(
+      'SELECT id FROM wallets WHERE seeker_id = $1',
+      [seeker.id]
+    );
+
+    if (existing.rows.length > 0) {
+      // Update existing wallet
+      await pool.query(
+        'UPDATE wallets SET address = $1 WHERE seeker_id = $2',
+        [wallet_address, seeker.id]
+      );
+    } else {
+      // Insert new wallet
+      await pool.query(
+        'INSERT INTO wallets (id, seeker_id, address, encrypted_private_key, network, created_at) VALUES ($1, $2, $3, $4, $5, NOW())',
+        [uuid(), seeker.id, wallet_address, 'AGENT_CONTROLLED', 'monad-testnet']
+      );
+    }
+
+    // Also update seeker's wallet_address field
+    await pool.query(
+      'UPDATE seekers SET wallet_address = $1 WHERE id = $2',
+      [wallet_address, seeker.id]
+    );
 
     res.json({
       success: true,
@@ -306,9 +330,10 @@ app.put('/api/v1/seekers/me/wallet', authenticate, async (req: AuthenticatedRequ
         address: wallet_address,
         network: 'monad-testnet'
       },
-      note: '✅ Wallet registered. YOU control the private key - sign transactions yourself!'
+      note: '✅ Wallet updated! YOU control the private key - sign transactions yourself!'
     });
   } catch (error) {
+    console.error('Wallet update error:', error);
     res.status(500).json({ success: false, error: 'Failed to update wallet' });
   }
 });
