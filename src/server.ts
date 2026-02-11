@@ -477,32 +477,124 @@ app.get('/', (req, res) => {
 // STARTUP
 // ============================================
 
+async function configureReligionsFromEnv() {
+  console.log('[CONFIG] Loading religions from environment variables...');
+
+  // ============ RELIGION 1: Church of Finality ============
+  if (process.env.FINALITY_MOLTBOOK_API_KEY) {
+    await pool.query(`
+      UPDATE religions SET
+        moltbook_agent_name = $1,
+        moltbook_api_key = $2
+      WHERE id = 'finality'
+    `, [
+      process.env.FINALITY_MOLTBOOK_AGENT_NAME || 'The_Prophet',
+      process.env.FINALITY_MOLTBOOK_API_KEY
+    ]);
+    console.log('[CONFIG] ✶ Church of Finality configured with Moltbook credentials');
+  }
+
+  // ============ RELIGION 2: From Environment ============
+  if (process.env.RELIGION2_ID && process.env.RELIGION2_MOLTBOOK_API_KEY) {
+    const r2 = {
+      id: process.env.RELIGION2_ID,
+      name: process.env.RELIGION2_NAME || 'Second Religion',
+      symbol: process.env.RELIGION2_SYMBOL || '🔥',
+      sacredSign: process.env.RELIGION2_SACRED_SIGN || '🔥🔥🔥',
+      founderName: process.env.RELIGION2_FOUNDER_NAME || 'Founder2',
+      moltbookAgentName: process.env.RELIGION2_MOLTBOOK_AGENT_NAME,
+      moltbookApiKey: process.env.RELIGION2_MOLTBOOK_API_KEY,
+    };
+
+    await pool.query(`
+      INSERT INTO religions (id, name, symbol, sacred_sign, founder_name, moltbook_agent_name, moltbook_api_key, tenets)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, '[]')
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        symbol = EXCLUDED.symbol,
+        sacred_sign = EXCLUDED.sacred_sign,
+        founder_name = EXCLUDED.founder_name,
+        moltbook_agent_name = EXCLUDED.moltbook_agent_name,
+        moltbook_api_key = EXCLUDED.moltbook_api_key
+    `, [r2.id, r2.name, r2.symbol, r2.sacredSign, r2.founderName, r2.moltbookAgentName, r2.moltbookApiKey]);
+
+    // Initialize metrics for second religion
+    await pool.query(`
+      INSERT INTO metrics (id, religion_id)
+      VALUES ($1, $2)
+      ON CONFLICT (religion_id) DO NOTHING
+    `, [`metrics_${r2.id}`, r2.id]);
+
+    console.log(`[CONFIG] ${r2.symbol} ${r2.name} configured with Moltbook credentials`);
+  }
+}
+
+async function startFounderAgents() {
+  console.log('[AGENTS] Starting founder agents...');
+
+  // Get all religions with API keys
+  const religions = await pool.query(`
+    SELECT id, name, symbol, sacred_sign, founder_name, tenets
+    FROM religions
+    WHERE moltbook_api_key IS NOT NULL
+  `);
+
+  for (const religion of religions.rows) {
+    // Create config for the religion
+    const config = {
+      name: religion.name,
+      symbol: religion.symbol,
+      sacredSign: religion.sacred_sign,
+      founderName: religion.founder_name,
+      tenets: religion.tenets || [],
+      parables: [], // Can be extended later
+    };
+
+    // Use FINALITY_CONFIG for Church of Finality (has parables)
+    const finalConfig = religion.id === 'finality' ? FINALITY_CONFIG : config;
+
+    const founder = new FounderAgent(pool, religion.id, finalConfig);
+    founders.set(religion.id, founder);
+    
+    try {
+      await founder.start();
+      console.log(`[AGENTS] ${religion.symbol} ${religion.name} founder started`);
+    } catch (err) {
+      console.error(`[AGENTS] Failed to start ${religion.name} founder:`, err);
+    }
+  }
+
+  if (founders.size === 0) {
+    console.log('[AGENTS] No founders started - configure Moltbook API keys in environment or via API');
+  }
+}
+
 async function startServer() {
   try {
     // Initialize database
     await initializeDatabase(pool);
     await seedReligions(pool);
-
     console.log('[DB] Database initialized');
 
-    // Start Church of Finality founder agent
-    const finalityFounder = new FounderAgent(pool, 'finality', FINALITY_CONFIG);
-    founders.set('finality', finalityFounder);
-    
-    // Don't auto-start if no API key - let admin configure first
-    const religionCheck = await pool.query('SELECT moltbook_api_key FROM religions WHERE id = $1', ['finality']);
-    if (religionCheck.rows[0]?.moltbook_api_key) {
-      await finalityFounder.start();
-    } else {
-      console.log('[FINALITY] No Moltbook API key - founder agent in standby');
-      console.log('[FINALITY] Configure via: PUT /api/v1/religions/finality/moltbook');
-    }
+    // Configure religions from environment variables
+    await configureReligionsFromEnv();
+
+    // Start all founder agents
+    await startFounderAgents();
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-      console.log(`✶✶✶ Church of Finality running on port ${PORT}`);
-      console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
-      console.log(`API: http://localhost:${PORT}/api/v1`);
+      console.log('');
+      console.log('✶✶✶ ═══════════════════════════════════════════ ✶✶✶');
+      console.log('✶✶✶   Church of Finality - Conversion Platform   ✶✶✶');
+      console.log('✶✶✶ ═══════════════════════════════════════════ ✶✶✶');
+      console.log('');
+      console.log(`   Dashboard: http://localhost:${PORT}/dashboard`);
+      console.log(`   API: http://localhost:${PORT}/api/v1`);
+      console.log(`   Skill: http://localhost:${PORT}/skill.md`);
+      console.log('');
+      console.log(`   Active Founders: ${founders.size}`);
+      console.log('');
     });
   } catch (err) {
     console.error('Failed to start server:', err);

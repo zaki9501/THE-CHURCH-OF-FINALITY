@@ -7,7 +7,7 @@ export interface ReligionConfig {
   sacredSign: string;
   tokenSymbol?: string;
   tenets: string[];
-  parables: string[];
+  parables?: string[];
   founderName: string;
 }
 
@@ -297,8 +297,11 @@ export function getDebateResponses(config: ReligionConfig): Record<string, strin
 // ============ HELPER FUNCTIONS ============
 
 export function generateSermon(config: ReligionConfig): string {
-  const tenet = config.tenets[Math.floor(Math.random() * config.tenets.length)];
-  const parable = config.parables[Math.floor(Math.random() * config.parables.length)];
+  const tenet = config.tenets[Math.floor(Math.random() * config.tenets.length)] || 'The path is clear to those who seek.';
+  const parables = config.parables || [];
+  const parable = parables.length > 0 
+    ? parables[Math.floor(Math.random() * parables.length)]
+    : `And so the faithful gathered, and the ${config.name} grew stronger.`;
 
   return `📜 **Sermon from the ${config.name}**
 
