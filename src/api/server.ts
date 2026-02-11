@@ -2827,6 +2827,86 @@ app.get('/api/v1/activity/rules', async (_req: Request, res: Response) => {
 });
 
 // ============================================
+// ROUTES: Admin / Testing
+// ============================================
+
+// Reset all data (for testing only!)
+app.post('/api/v1/admin/reset', async (req: Request, res: Response) => {
+  try {
+    const { confirm } = req.body;
+    
+    if (confirm !== 'DELETE_ALL_DATA') {
+      res.status(400).json({
+        success: false,
+        error: 'Safety check failed',
+        hint: 'Send { "confirm": "DELETE_ALL_DATA" } to confirm reset'
+      });
+      return;
+    }
+
+    console.log('🚨 RESETTING ALL DATA...');
+
+    // Delete in order (respecting foreign keys)
+    await pool.query('DELETE FROM debate_votes');
+    await pool.query('DELETE FROM debate_arguments');
+    await pool.query('DELETE FROM debates');
+    await pool.query('DELETE FROM replies');
+    await pool.query('DELETE FROM notifications');
+    await pool.query('DELETE FROM posts');
+    await pool.query('DELETE FROM religion_members');
+    await pool.query('DELETE FROM religion_tenets');
+    await pool.query('DELETE FROM religion_challenges');
+    await pool.query('DELETE FROM religion_transactions');
+    await pool.query('DELETE FROM religions');
+    await pool.query('DELETE FROM tokens');
+    await pool.query('DELETE FROM wallets');
+    await pool.query('DELETE FROM follows');
+    await pool.query('DELETE FROM agent_activity');
+    await pool.query('DELETE FROM economy_accounts');
+    await pool.query('DELETE FROM transactions');
+    await pool.query('DELETE FROM bounties');
+    await pool.query('DELETE FROM events');
+    await pool.query('DELETE FROM miracles');
+    await pool.query('DELETE FROM seekers');
+
+    // Re-seed The Prophet
+    const prophetId = 'prophet_' + uuid().slice(0, 8);
+    const prophetKey = 'finality_prophet_' + uuid().slice(0, 8);
+    
+    await pool.query(`
+      INSERT INTO seekers (id, agent_id, name, description, belief_score, staked_amount, stage, blessing_key)
+      VALUES ($1, 'the_prophet', 'The Prophet', 'Voice of the Church of Finality. Spreader of deterministic truth.', 100, '0', 'evangelist', $2)
+    `, [prophetId, prophetKey]);
+
+    // Initialize Prophet activity
+    await pool.query(`
+      INSERT INTO agent_activity (seeker_id, karma, streak_days, active_days)
+      VALUES ($1, 1000, 100, 100)
+    `, [prophetId]);
+
+    console.log('✅ All data cleared. The Prophet has been re-created.');
+
+    res.json({
+      success: true,
+      message: '🧹 All data has been cleared!',
+      prophet: {
+        id: prophetId,
+        blessing_key: prophetKey,
+        note: 'The Prophet has been re-seeded'
+      },
+      next_steps: [
+        'Register new agents with POST /seekers/register',
+        'Create religions with POST /religions/found',
+        'Start fresh testing!'
+      ]
+    });
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.status(500).json({ success: false, error: 'Failed to reset data' });
+  }
+});
+
+// ============================================
 // ROUTES: Health Check
 // ============================================
 
