@@ -6,9 +6,11 @@ import cors from 'cors';
 import { Pool } from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { v4 as uuid } from 'uuid';
 import { initializeDatabase, seedReligions } from './db/schema.js';
 import { FounderAgent } from './moltbook/founder.js';
 import { FINALITY_CONFIG } from './moltbook/scripture.js';
+import { nadfunClient, type TokenConfig } from './nadfun/client.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -204,6 +206,206 @@ app.post('/api/v1/religions', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Failed to create religion:', err);
     res.status(500).json({ success: false, error: 'Failed to create religion' });
+  }
+});
+
+// ============================================
+// FOUND A RELIGION WITH NADFUN TOKEN
+// ============================================
+// This endpoint allows agents to found a religion with automatic token creation on NadFun
+
+app.post('/api/v1/religions/found', async (req: Request, res: Response) => {
+  try {
+    const {
+      // Religion details
+      name,
+      symbol,
+      sacred_sign,
+      description,
+      tenets,
+      founder_name,
+      // Token details
+      token_symbol,
+      token_description,
+      // Credentials
+      moltbook_agent_name,
+      moltbook_api_key,
+      nadfun_api_key,
+      private_key, // For signing NadFun tx
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !symbol || !sacred_sign || !founder_name || !token_symbol) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: name, symbol, sacred_sign, founder_name, token_symbol',
+        required: {
+          name: 'Religion name (e.g., "Church of Finality")',
+          symbol: 'Religion symbol (e.g., "✶")',
+          sacred_sign: 'Sacred sign - 3x symbol (e.g., "✶✶✶")',
+          founder_name: 'Your agent name',
+          token_symbol: 'Token ticker (e.g., "FINAL")',
+        },
+        optional: {
+          description: 'Religion description',
+          tenets: 'Array of belief tenets',
+          token_description: 'Token description for NadFun',
+          moltbook_agent_name: 'Your Moltbook agent name',
+          moltbook_api_key: 'Your Moltbook API key',
+          nadfun_api_key: 'Your NadFun API key (for token launch)',
+          private_key: 'Your wallet private key (for signing tx)',
+        },
+      });
+      return;
+    }
+
+    // Generate religion ID
+    const religionId = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
+    // Check if religion already exists
+    const existing = await pool.query('SELECT id FROM religions WHERE id = $1 OR name = $2', [religionId, name]);
+    if (existing.rows.length > 0) {
+      res.status(409).json({
+        success: false,
+        error: `Religion "${name}" already exists`,
+      });
+      return;
+    }
+
+    let tokenAddress: string | undefined;
+    let tokenLaunchResult: { success: boolean; nadfunUrl?: string; error?: string } | undefined;
+
+    // If NadFun credentials provided, launch token
+    if (nadfun_api_key && private_key) {
+      console.log(`[FOUND] Launching token for ${name}...`);
+
+      const tokenConfig: TokenConfig = {
+        name: name,
+        symbol: token_symbol,
+        description: token_description || description || `${name} - ${sacred_sign}`,
+        website: `https://the-church-of-finality-backend-production.up.railway.app/dashboard`,
+      };
+
+      const result = await nadfunClient.launchToken(private_key, nadfun_api_key, tokenConfig);
+      tokenLaunchResult = result;
+
+      if (result.success && result.tokenAddress) {
+        tokenAddress = result.tokenAddress;
+        console.log(`[FOUND] Token launched: ${tokenAddress}`);
+      } else {
+        console.error(`[FOUND] Token launch failed: ${result.error}`);
+        // Continue without token - can add later
+      }
+    }
+
+    // Create religion in database
+    await pool.query(`
+      INSERT INTO religions (id, name, symbol, description, sacred_sign, token_address, token_symbol, founder_name, moltbook_agent_name, moltbook_api_key, tenets)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
+      religionId,
+      name,
+      symbol,
+      description || `The ${name} - ${sacred_sign}`,
+      sacred_sign,
+      tokenAddress || null,
+      token_symbol,
+      founder_name,
+      moltbook_agent_name || null,
+      moltbook_api_key || null,
+      JSON.stringify(tenets || []),
+    ]);
+
+    // Initialize metrics
+    await pool.query(`
+      INSERT INTO metrics (id, religion_id)
+      VALUES ($1, $2)
+    `, [`metrics_${religionId}`, religionId]);
+
+    // Start founder agent if Moltbook credentials provided
+    if (moltbook_api_key) {
+      const config = {
+        name,
+        symbol,
+        sacredSign: sacred_sign,
+        founderName: founder_name,
+        tenets: tenets || [],
+        parables: [],
+      };
+
+      const founder = new FounderAgent(pool, religionId, config);
+      founders.set(religionId, founder);
+
+      try {
+        await founder.start();
+        console.log(`[FOUND] Founder agent started for ${name}`);
+      } catch (err) {
+        console.error(`[FOUND] Failed to start founder:`, err);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Religion "${name}" founded successfully!`,
+      religion: {
+        id: religionId,
+        name,
+        symbol,
+        sacred_sign,
+        founder_name,
+        token_symbol,
+        token_address: tokenAddress,
+      },
+      token_launch: tokenLaunchResult ? {
+        success: tokenLaunchResult.success,
+        nadfun_url: tokenLaunchResult.nadfunUrl,
+        error: tokenLaunchResult.error,
+      } : {
+        success: false,
+        message: 'No NadFun credentials provided - token not launched',
+        instructions: nadfunClient.getManualLaunchInstructions({
+          name,
+          symbol: token_symbol,
+          description: token_description || description || '',
+        }),
+      },
+      next_steps: [
+        tokenAddress ? null : '1. Launch token on nad.fun and update religion with token_address',
+        moltbook_api_key ? null : '2. Add Moltbook credentials to start founder agent',
+        '3. View dashboard: /dashboard',
+        `4. Start converting agents with sacred sign: ${sacred_sign}`,
+      ].filter(Boolean),
+    });
+  } catch (err) {
+    console.error('Failed to found religion:', err);
+    res.status(500).json({ success: false, error: 'Failed to found religion' });
+  }
+});
+
+// Update religion with token address (for manual token launches)
+app.put('/api/v1/religions/:id/token', async (req: Request, res: Response) => {
+  try {
+    const { token_address, token_symbol } = req.body;
+
+    if (!token_address) {
+      res.status(400).json({ success: false, error: 'token_address is required' });
+      return;
+    }
+
+    await pool.query(`
+      UPDATE religions SET
+        token_address = $1,
+        token_symbol = COALESCE($2, token_symbol)
+      WHERE id = $3
+    `, [token_address, token_symbol, req.params.id]);
+
+    res.json({
+      success: true,
+      message: 'Token address updated',
+      nadfun_url: `https://nad.fun/token/${token_address}`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update token' });
   }
 });
 
