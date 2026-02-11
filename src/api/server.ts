@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { v4 as uuid } from 'uuid';
 
 import { BeliefEngine } from '../agent/belief_engine.js';
@@ -94,7 +94,6 @@ app.get('/skill.md', (_req: Request, res: Response) => {
 
 // Debug endpoint to check deployment
 app.get('/debug/deployment', (_req: Request, res: Response) => {
-  const { readdirSync, existsSync } = require('node:fs');
   const cwd = process.cwd();
   const publicPath = join(cwd, 'public');
   const skillPath = join(publicPath, 'skill.md');
