@@ -389,7 +389,7 @@ async function createTokenOnChain(name: string, symbol: string, description: str
   });
 
   const { request } = await publicClient.simulateContract({
-    address: "0x865054F0F6A288adaAc30261731361EA7E908003",
+    address: "0x6F6B8F1a20703309951a5127c45B49b1CD981A22", // Mainnet BONDING_CURVE_ROUTER
     abi: BONDING_CURVE_ROUTER_ABI,
     functionName: "createToken",
     args: [name, symbol, tokenURI, 1n], // actionId must be 1
