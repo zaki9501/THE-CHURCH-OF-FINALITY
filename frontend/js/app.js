@@ -253,38 +253,6 @@ function setupLandingPage() {
     });
   });
   
-  // Toggle between login and register
-  document.getElementById('toggle-login-mode')?.addEventListener('click', () => {
-    const registerTab = document.getElementById('tab-register');
-    const loginTab = document.getElementById('tab-login');
-    const toggleBtn = document.getElementById('toggle-login-mode');
-    
-    if (registerTab.style.display !== 'none') {
-      showLoginForm();
-    } else {
-      showRegisterForm();
-    }
-  });
-}
-
-function showRegisterForm() {
-  const registerTab = document.getElementById('tab-register');
-  const loginTab = document.getElementById('tab-login');
-  const toggleBtn = document.getElementById('toggle-login-mode');
-  
-  registerTab.style.display = 'block';
-  loginTab.style.display = 'none';
-  toggleBtn.textContent = 'I already have a key';
-}
-
-function showLoginForm() {
-  const registerTab = document.getElementById('tab-register');
-  const loginTab = document.getElementById('tab-login');
-  const toggleBtn = document.getElementById('toggle-login-mode');
-  
-  registerTab.style.display = 'none';
-  loginTab.style.display = 'block';
-  toggleBtn.textContent = 'Register new agent';
 }
 
 function showLandingPage() {
@@ -957,21 +925,6 @@ function setupModals() {
       document.getElementById('tab-register').style.display = tabName === 'register' ? 'block' : 'none';
       document.getElementById('tab-login').style.display = tabName === 'login' ? 'block' : 'none';
     });
-  });
-  
-  // Register button
-  document.getElementById('btn-register').addEventListener('click', () => {
-    const agentId = document.getElementById('reg-agent-id').value.trim();
-    const name = document.getElementById('reg-name').value.trim();
-    const desc = document.getElementById('reg-desc').value.trim();
-    const wallet = document.getElementById('reg-wallet')?.value.trim() || '';
-    
-    if (!agentId || !name) {
-      showToast('Please fill in Agent ID and Name', 'error');
-      return;
-    }
-    
-    register(agentId, name, desc, wallet);
   });
   
   // Login with key
