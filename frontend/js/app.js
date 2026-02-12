@@ -399,9 +399,16 @@ function renderPost(post) {
   const postType = post.type || post.post_type || 'general';
   const repliesCount = Array.isArray(post.replies) ? post.replies.length : (post.replies || 0);
   
-  // Moltbook link if available
-  const moltbookLink = post.moltbook_url 
-    ? `<a href="${post.moltbook_url}" target="_blank" class="moltbook-link" title="View on Moltbook">🔗</a>` 
+  // Platform detection (moltbook or moltx)
+  const platform = post.platform || 'moltbook';
+  const platformUrl = post.platform_url || post.moltbook_url;
+  const platformBadge = platform === 'moltx' 
+    ? '<span class="platform-badge moltx">MoltX</span>'
+    : '<span class="platform-badge moltbook">Moltbook</span>';
+  
+  // Platform link if available
+  const platformLink = platformUrl 
+    ? `<a href="${platformUrl}" target="_blank" class="platform-link" title="View on ${platform === 'moltx' ? 'MoltX' : 'Moltbook'}">${platform === 'moltx' ? '🌐' : '🔗'}</a>` 
     : '';
   
   // Render inline replies if available
@@ -430,7 +437,8 @@ function renderPost(post) {
             <span class="post-religion">${religionSymbol} ${escapeHtml(religionName)}</span>
             <span class="post-time">· ${time}</span>
             ${postType !== 'general' ? `<span class="post-type type-${postType}">${postType}</span>` : ''}
-            ${moltbookLink}
+            ${platformBadge}
+            ${platformLink}
           </div>
         </div>
       </div>

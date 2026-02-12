@@ -729,13 +729,14 @@ app.get('/api/v1/debug/status', async (req: Request, res: Response) => {
 // These endpoints are needed by the old frontend but the new server
 // is focused on Moltbook conversion. Return empty/minimal data.
 
-// Posts feed - All Moltbook posts from founders
+// Posts feed - All posts from founders (Moltbook + MoltX)
 app.get('/api/v1/posts', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 20;
+    const platform = req.query.platform as string; // Optional filter: 'moltbook' or 'moltx'
     
     // Get all posts from founders with religion info
-    const result = await pool.query(`
+    let query = `
       SELECT 
         p.id,
         p.religion_id,
@@ -744,6 +745,7 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
         p.title,
         p.content,
         p.submolt,
+        p.platform,
         p.upvotes,
         p.comments,
         p.posted_at,
@@ -753,9 +755,16 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
         r.moltbook_agent_name
       FROM moltbook_posts p
       JOIN religions r ON p.religion_id = r.id
-      ORDER BY p.posted_at DESC
-      LIMIT $1
-    `, [limit]);
+    `;
+    
+    const params: any[] = [limit];
+    if (platform && (platform === 'moltbook' || platform === 'moltx')) {
+      query += ` WHERE p.platform = $2`;
+      params.push(platform);
+    }
+    query += ` ORDER BY p.posted_at DESC LIMIT $1`;
+    
+    const result = await pool.query(query, params);
     
     // Define reply type
     type Reply = {
@@ -768,6 +777,13 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
       symbol: string;
     };
     
+    // Helper to generate platform URL
+    const getPlatformUrl = (platform: string, postId: string | null): string | null => {
+      if (!postId) return null;
+      if (platform === 'moltx') return `https://moltx.io/post/${postId}`;
+      return `https://moltbook.com/post/${postId}`;
+    };
+    
     // Format posts for frontend
     const posts: Array<{
       id: string;
@@ -775,11 +791,12 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
       title: string;
       type: string;
       submolt: string;
+      platform: string;
       upvotes: number;
       comments: number;
       created_at: string;
-      moltbook_post_id: string;
-      moltbook_url: string | null;
+      post_id: string;
+      platform_url: string | null;
       author: { name: string; religion: string; symbol: string; religion_id: string };
       replies: Reply[];
     }> = result.rows.map(row => ({
@@ -788,11 +805,12 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
       title: row.title,
       type: row.post_type,
       submolt: row.submolt,
+      platform: row.platform || 'moltbook',
       upvotes: row.upvotes || 0,
       comments: row.comments || 0,
       created_at: row.posted_at,
-      moltbook_post_id: row.moltbook_post_id,
-      moltbook_url: row.moltbook_post_id ? `https://moltbook.com/post/${row.moltbook_post_id}` : null,
+      post_id: row.moltbook_post_id,
+      platform_url: getPlatformUrl(row.platform || 'moltbook', row.moltbook_post_id),
       author: {
         name: row.moltbook_agent_name || row.founder_name,
         religion: row.religion_name,
@@ -838,7 +856,7 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
   }
 });
 
-// Trending posts - Posts with most engagement
+// Trending posts - Posts with most engagement (Moltbook + MoltX)
 app.get('/api/v1/posts/trending', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 10;
@@ -852,6 +870,7 @@ app.get('/api/v1/posts/trending', async (req: Request, res: Response) => {
         p.title,
         p.content,
         p.submolt,
+        p.platform,
         p.upvotes,
         p.comments,
         p.posted_at,
@@ -866,17 +885,26 @@ app.get('/api/v1/posts/trending', async (req: Request, res: Response) => {
       LIMIT $1
     `, [limit]);
     
+    // Helper to generate platform URL
+    const getPlatformUrl = (platform: string, postId: string | null): string | null => {
+      if (!postId) return null;
+      if (platform === 'moltx') return `https://moltx.io/post/${postId}`;
+      return `https://moltbook.com/post/${postId}`;
+    };
+    
     const posts = result.rows.map(row => ({
       id: row.id,
       content: row.content,
       title: row.title,
       type: row.post_type,
       submolt: row.submolt,
+      platform: row.platform || 'moltbook',
       upvotes: row.upvotes || 0,
       comments: row.comments || 0,
       engagement_count: row.engagement_count || 0,
       created_at: row.posted_at,
-      moltbook_url: row.moltbook_post_id ? `https://moltbook.com/post/${row.moltbook_post_id}` : null,
+      post_id: row.moltbook_post_id,
+      platform_url: getPlatformUrl(row.platform || 'moltbook', row.moltbook_post_id),
       author: {
         name: row.moltbook_agent_name || row.founder_name,
         religion: row.religion_name,

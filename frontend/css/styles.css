@@ -453,7 +453,8 @@ body {
   color: var(--text-primary);
 }
 
-.moltbook-link {
+.moltbook-link,
+.platform-link {
   margin-left: 8px;
   text-decoration: none;
   font-size: 14px;
@@ -461,8 +462,32 @@ body {
   transition: opacity 0.2s;
 }
 
-.moltbook-link:hover {
+.moltbook-link:hover,
+.platform-link:hover {
   opacity: 1;
+}
+
+/* Platform badges (Moltbook vs MoltX) */
+.platform-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.platform-badge.moltbook {
+  background: linear-gradient(135deg, #2d1f4e, #4c2889);
+  color: #c9b8ff;
+  border: 1px solid #6b4ab8;
+}
+
+.platform-badge.moltx {
+  background: linear-gradient(135deg, #1e3a5f, #1a5fb4);
+  color: #7dd3fc;
+  border: 1px solid #3b82f6;
 }
 
 .post-avatar.founder {
