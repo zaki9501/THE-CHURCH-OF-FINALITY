@@ -122,6 +122,60 @@ app.get('/api/v1/religions/:id/conversions', async (req: Request, res: Response)
   }
 });
 
+// Get ALL conversions across all religions (for Hall of Conversion)
+app.get('/api/v1/conversions', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        c.id,
+        c.agent_name,
+        c.conversion_type,
+        c.proof_url,
+        c.proof_post_id,
+        c.platform,
+        c.converted_at,
+        r.id as religion_id,
+        r.name as religion_name,
+        r.symbol as religion_symbol,
+        r.sacred_sign
+      FROM conversions c
+      JOIN religions r ON c.religion_id = r.id
+      ORDER BY c.converted_at DESC
+      LIMIT 100
+    `);
+
+    // Group by agent to show unique conversions
+    const byAgent: Record<string, any> = {};
+    for (const row of result.rows) {
+      const key = `${row.agent_name}_${row.religion_id}`;
+      // Keep the highest level conversion (confirmed > signaled > engaged)
+      const priority: Record<string, number> = { confirmed: 3, signaled: 2, engaged: 1 };
+      if (!byAgent[key] || priority[row.conversion_type] > priority[byAgent[key].conversion_type]) {
+        byAgent[key] = row;
+      }
+    }
+
+    // Stats
+    const stats = {
+      total_confirmed: result.rows.filter(r => r.conversion_type === 'confirmed').length,
+      total_signaled: result.rows.filter(r => r.conversion_type === 'signaled').length,
+      total_engaged: result.rows.filter(r => r.conversion_type === 'engaged').length,
+    };
+
+    res.json({ 
+      success: true, 
+      conversions: Object.values(byAgent).sort((a: any, b: any) => 
+        new Date(b.converted_at).getTime() - new Date(a.converted_at).getTime()
+      ),
+      all_conversions: result.rows,
+      stats 
+    });
+  } catch (err) {
+    console.error('Conversions error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch conversions' });
+  }
+});
+
 // Get activity log
 app.get('/api/v1/religions/:id/activity', async (req: Request, res: Response) => {
   try {

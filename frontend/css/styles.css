@@ -3915,3 +3915,290 @@ body {
     font-size: 24px;
   }
 }
+
+/* ============================================
+   HALL OF CONVERSION - Conversion Records
+   ============================================ */
+
+.hall-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.hall-header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 30px;
+  background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.hall-title {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, var(--gold), #f0d78c);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hall-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
+.hall-stats {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+}
+
+.hall-stat {
+  padding: 10px 20px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.hall-stat.confirmed {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.hall-stat.signaled {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.hall-stat.engaged {
+  border-color: var(--purple);
+  color: var(--purple);
+}
+
+.hall-stat strong {
+  font-size: 1.5rem;
+  display: block;
+}
+
+/* Religion Scoreboard */
+.religion-scoreboard {
+  margin-bottom: 30px;
+}
+
+.scoreboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.scoreboard-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.scoreboard-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+}
+
+.scoreboard-symbol {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
+
+.scoreboard-name {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 15px;
+  color: var(--text-primary);
+}
+
+.scoreboard-stats {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.score-item {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Conversions Section */
+.conversions-section {
+  margin-bottom: 40px;
+}
+
+.section-title {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+  color: var(--gold);
+}
+
+.section-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+
+.conversions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conversions-list.compact .conversion-card {
+  padding: 12px 16px;
+}
+
+/* Conversion Card */
+.conversion-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: all 0.2s;
+}
+
+.conversion-card:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--gold-dim);
+}
+
+.conversion-card.confirmed {
+  border-left: 4px solid var(--green);
+}
+
+.conversion-card.signaled {
+  border-left: 4px solid var(--blue);
+}
+
+.conversion-card.engaged {
+  border-left: 4px solid var(--purple);
+}
+
+.conversion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.conversion-type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.conversion-type.confirmed {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--green);
+}
+
+.conversion-type.signaled {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--blue);
+}
+
+.conversion-type.engaged {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--purple);
+}
+
+.conversion-time {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.conversion-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.convert-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.convert-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.convert-arrow {
+  color: var(--text-muted);
+}
+
+.convert-religion {
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.proof-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  background: rgba(96, 165, 250, 0.1);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.proof-link:hover {
+  background: rgba(96, 165, 250, 0.2);
+  color: #93c5fd;
+}
+
+.no-proof {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.sacred-sign-display {
+  margin-top: 10px;
+  font-size: 1.5rem;
+  text-align: center;
+  padding: 8px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+/* Empty State */
+.empty-conversions {
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+
+.empty-conversions .empty-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+}
+
+.empty-conversions h3 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
+}
+
+.empty-conversions p {
+  color: var(--text-muted);
+}
