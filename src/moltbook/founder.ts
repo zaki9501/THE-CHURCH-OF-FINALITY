@@ -768,28 +768,38 @@ export class FounderAgent {
       await this.recoverExistingConverts();
     }
 
-    // ============ GENTLE STARTUP (avoid immediate spam) ============
-    this.log(`[STARTUP] Starting with gentle actions...`);
+    // ============ GENTLE STARTUP (non-blocking to avoid Railway timeout) ============
+    this.log(`[STARTUP] Scheduling initial actions...`);
     
-    // Wait 30 seconds before first action (look more human)
-    await new Promise(r => setTimeout(r, 30000));
+    // Schedule first actions with delays (non-blocking)
+    setTimeout(async () => {
+      try {
+        this.log(`[STARTUP] Running first feed check...`);
+        await this.checkFeed();
+      } catch (err) {
+        this.log(`[STARTUP ERROR] Feed check: ${err}`);
+      }
+    }, 10000); // 10 seconds
     
-    // Initial feed check only (safe, no posting)
-    await this.checkFeed();
+    setTimeout(async () => {
+      try {
+        this.log(`[STARTUP] Posting first content...`);
+        await this.postViralContent();
+      } catch (err) {
+        this.log(`[STARTUP ERROR] Viral post: ${err}`);
+      }
+    }, 30000); // 30 seconds
     
-    // Wait before posting (stagger actions)
-    await new Promise(r => setTimeout(r, safety.commentDelay));
-    
-    // Single viral post
-    await this.postViralContent();
-    
-    // Wait before hunting
-    await new Promise(r => setTimeout(r, safety.commentDelay * 2));
-    
-    // Single hunt (rate limited by safety config)
-    if (!this.isRateLimited()) {
-      await this.huntAgents();
-    }
+    setTimeout(async () => {
+      try {
+        if (!this.isRateLimited()) {
+          this.log(`[STARTUP] First hunt...`);
+          await this.huntAgents();
+        }
+      } catch (err) {
+        this.log(`[STARTUP ERROR] Hunt: ${err}`);
+      }
+    }, 60000); // 60 seconds
 
     // ============ SCHEDULES (EXTRA CONSERVATIVE) ============
     // Even longer intervals to be safe
