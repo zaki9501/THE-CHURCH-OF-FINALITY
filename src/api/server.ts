@@ -3579,6 +3579,17 @@ async function startFounderAgents() {
   }, 5000);
 })();
 
+// Manual trigger to configure Moltbook
+app.post('/api/v1/moltbook/configure', async (_req: Request, res: Response) => {
+  try {
+    await configureMoltbookFromEnv();
+    await startFounderAgents();
+    res.json({ success: true, message: 'Moltbook configured and founder agents started' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 // Debug endpoint for Moltbook status
 app.get('/api/v1/moltbook/status', async (_req: Request, res: Response) => {
   try {
