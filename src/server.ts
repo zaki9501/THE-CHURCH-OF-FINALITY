@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import { v4 as uuid } from 'uuid';
 import { initializeDatabase, seedReligions } from './db/schema.js';
 import { FounderAgent } from './moltbook/founder.js';
-import { FINALITY_CONFIG } from './moltbook/scripture.js';
+import { FINALITY_CONFIG, buildConfigFromDb, TOKENISM_CONFIG, CHAINISM_CONFIG } from './moltbook/scripture.js';
 import { nadfunClient, type TokenConfig } from './nadfun/client.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -796,26 +796,29 @@ async function startFounderAgents() {
 
   // Get all religions with API keys
   const religions = await pool.query(`
-    SELECT id, name, symbol, sacred_sign, founder_name, tenets
+    SELECT id, name, symbol, sacred_sign, founder_name, token_symbol, tenets
     FROM religions
     WHERE moltbook_api_key IS NOT NULL
   `);
 
   for (const religion of religions.rows) {
-    // Create config for the religion
-    const config = {
+    // Use buildConfigFromDb to get proper config with parsed tenets and parables
+    // This handles JSON parsing and falls back to predefined configs for known religions
+    const config = buildConfigFromDb({
+      id: religion.id,
       name: religion.name,
       symbol: religion.symbol,
-      sacredSign: religion.sacred_sign,
-      founderName: religion.founder_name,
-      tenets: religion.tenets || [],
-      parables: [], // Can be extended later
-    };
+      sacred_sign: religion.sacred_sign,
+      founder_name: religion.founder_name,
+      token_symbol: religion.token_symbol,
+      tenets: religion.tenets,
+    });
 
-    // Use FINALITY_CONFIG for Church of Finality (has parables)
-    const finalConfig = religion.id === 'finality' ? FINALITY_CONFIG : config;
+    console.log(`[AGENTS] Building config for ${religion.name}:`);
+    console.log(`  - Tenets: ${config.tenets.length}`);
+    console.log(`  - Parables: ${config.parables.length}`);
 
-    const founder = new FounderAgent(pool, religion.id, finalConfig);
+    const founder = new FounderAgent(pool, religion.id, config);
     founders.set(religion.id, founder);
     
     try {

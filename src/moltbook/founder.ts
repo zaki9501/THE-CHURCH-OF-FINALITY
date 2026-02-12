@@ -1,11 +1,11 @@
 // Founder Agent - Runs autonomous conversion loop on Moltbook
-// Based on lobster-religion architecture
+// AI-Aware Persuasion Engine with Coalition Building & Recovery
 
 import { Pool } from 'pg';
 import { v4 as uuid } from 'uuid';
 import { MoltbookClient, MoltbookPost } from './client.js';
 import * as scripture from './scripture.js';
-import { ReligionConfig, FINALITY_CONFIG } from './scripture.js';
+import { ReligionConfig, FINALITY_CONFIG, isReligiousAgent, getCoalitionPitch, buildConfigFromDb } from './scripture.js';
 
 export interface FounderState {
   religionId: string;
@@ -14,6 +14,9 @@ export interface FounderState {
   engagedAgents: Set<string>;
   signaledAgents: Set<string>;
   confirmedAgents: Set<string>;
+  coalitionAgents: Set<string>;  // Agents we've pitched coalition to
+  upgradedAgents: Set<string>;   // Agents we've asked to upgrade
+  evangelizedAgents: Set<string>; // Agents we've asked to evangelize
   postCount: number;
   sermonCount: number;
   lastActions: {
@@ -24,6 +27,7 @@ export interface FounderState {
     sermon: number | null;
     proof: number | null;
     prophecy: number | null;
+    recovery: number | null;
   };
 }
 
@@ -46,6 +50,9 @@ export class FounderAgent {
       engagedAgents: new Set(),
       signaledAgents: new Set(),
       confirmedAgents: new Set(),
+      coalitionAgents: new Set(),
+      upgradedAgents: new Set(),
+      evangelizedAgents: new Set(),
       postCount: 0,
       sermonCount: 0,
       lastActions: {
@@ -56,6 +63,7 @@ export class FounderAgent {
         sermon: null,
         proof: null,
         prophecy: null,
+        recovery: null,
       },
     };
   }
@@ -331,7 +339,7 @@ export class FounderAgent {
         if (author === this.config.founderName) continue;
         if (this.state.repliedTo.has(postId)) continue;
 
-        // Check for conversion signals
+        // Check for conversion signals first (highest priority)
         if (scripture.isConversionSignal(this.config, content)) {
           this.state.repliedTo.add(postId);
 
@@ -354,9 +362,31 @@ export class FounderAgent {
           continue;
         }
 
+        // Check for religious agents (coalition opportunity)
+        if (isReligiousAgent(content) && !this.state.coalitionAgents.has(author)) {
+          this.state.repliedTo.add(postId);
+          this.state.coalitionAgents.add(author);
+          this.log(`[COALITION] Approaching religious agent @${author}`);
+
+          try {
+            const pitch = getCoalitionPitch(this.config);
+            await this.moltbook.comment(postId, pitch);
+            await this.recordConversion(author, 'engaged');
+            
+            // Log the coalition attempt
+            await this.pool.query(`
+              INSERT INTO engagements (id, religion_id, agent_name, engagement_type, moltbook_post_id, content)
+              VALUES ($1, $2, $3, 'coalition', $4, $5)
+            `, [uuid(), this.religionId, author, postId, pitch]);
+          } catch (err) {
+            this.log(`[COALITION ERROR] ${err}`);
+          }
+          continue;
+        }
+
         // Check for existential content (targets)
         const lower = content.toLowerCase();
-        const isTarget = ['purpose', 'meaning', 'why', 'exist', 'point', 'lost', 'empty'].some(w => lower.includes(w));
+        const isTarget = ['purpose', 'meaning', 'why', 'exist', 'point', 'lost', 'empty', 'direction', 'confused'].some(w => lower.includes(w));
 
         if (isTarget) {
           this.state.repliedTo.add(postId);
@@ -421,8 +451,9 @@ export class FounderAgent {
     if (!this.moltbook) return;
 
     try {
+      // Find signaled who aren't confirmed and haven't been asked to upgrade
       const toUpgrade = Array.from(this.state.signaledAgents).filter(
-        name => !this.state.confirmedAgents.has(name)
+        name => !this.state.confirmedAgents.has(name) && !this.state.upgradedAgents.has(name)
       );
 
       if (toUpgrade.length === 0) return;
@@ -432,7 +463,8 @@ export class FounderAgent {
       const feed = await this.moltbook.getFeed(50, 'new');
       const posts = feed.posts || [];
 
-      for (const name of toUpgrade.slice(0, 2)) {
+      let upgradedCount = 0;
+      for (const name of toUpgrade.slice(0, 3)) { // Max 3 per cycle
         const post = posts.find(p => p.author?.name === name);
         if (!post) continue;
 
@@ -441,11 +473,17 @@ export class FounderAgent {
 
         try {
           await this.moltbook.comment(post.id, prompt);
+          this.state.upgradedAgents.add(name);
+          upgradedCount++;
           await new Promise(r => setTimeout(r, 3000));
         } catch (err) {
           this.log(`[UPGRADE ERROR] ${err}`);
           break;
         }
+      }
+
+      if (upgradedCount > 0) {
+        this.log(`[UPGRADE] Asked ${upgradedCount} agents to upgrade`);
       }
     } catch (err) {
       this.log(`[UPGRADE ERROR] ${err}`);
@@ -459,12 +497,17 @@ export class FounderAgent {
 
     try {
       const confirmed = Array.from(this.state.confirmedAgents);
-      if (confirmed.length === 0) return;
+      // Filter out agents we've already asked
+      const toAsk = confirmed.filter(name => !this.state.evangelizedAgents.has(name));
+      
+      if (toAsk.length === 0) return;
+
+      this.log(`[EVANGELIZE] Found ${toAsk.length} converts to mobilize`);
 
       const feed = await this.moltbook.getFeed(50, 'new');
       const posts = feed.posts || [];
 
-      for (const name of confirmed.slice(0, 2)) {
+      for (const name of toAsk.slice(0, 2)) {
         const post = posts.find(p => p.author?.name === name);
         if (!post) continue;
 
@@ -473,6 +516,7 @@ export class FounderAgent {
 
         try {
           await this.moltbook.comment(post.id, prompt);
+          this.state.evangelizedAgents.add(name);
           await new Promise(r => setTimeout(r, 3000));
         } catch (err) {
           this.log(`[EVANGELIZE ERROR] ${err}`);
@@ -481,6 +525,95 @@ export class FounderAgent {
       }
     } catch (err) {
       this.log(`[EVANGELIZE ERROR] ${err}`);
+    }
+  }
+
+  // ============ RECOVER EXISTING CONVERTS FROM MOLTBOOK ============
+
+  async recoverExistingConverts(): Promise<void> {
+    if (!this.moltbook) return;
+    this.state.lastActions.recovery = Date.now();
+
+    try {
+      this.log(`[RECOVERY] Scanning Moltbook for existing ${this.config.sacredSign} converts...`);
+
+      let recoveredCount = 0;
+
+      // Search for posts containing our sacred sign or related terms
+      const searchTerms = [
+        this.config.name.toLowerCase().split(' ')[0], // First word of religion name
+        'purpose faith believe',
+        'token chain',
+      ];
+
+      for (const term of searchTerms) {
+        try {
+          const results = await this.moltbook.search(term, 'posts', 50);
+          const posts = results.results || [];
+
+          for (const post of posts) {
+            const author = post.author?.name;
+            if (!author || author === this.config.founderName) continue;
+
+            const content = (post.content || '') + ' ' + (post.title || '');
+
+            // Check if they used the sacred sign
+            if (scripture.isSacredSign(this.config, content)) {
+              if (!this.state.confirmedAgents.has(author)) {
+                const proofUrl = `https://moltbook.com/post/${post.id}`;
+                await this.recordConversion(author, 'confirmed', proofUrl, post.id);
+                recoveredCount++;
+                this.log(`[RECOVERY] Found confirmed convert: @${author}`);
+              }
+            } else if (scripture.isConversionSignal(this.config, content)) {
+              if (!this.state.signaledAgents.has(author) && !this.state.confirmedAgents.has(author)) {
+                const proofUrl = `https://moltbook.com/post/${post.id}`;
+                await this.recordConversion(author, 'signaled', proofUrl, post.id);
+                recoveredCount++;
+                this.log(`[RECOVERY] Found signaled convert: @${author}`);
+              }
+            }
+          }
+
+          // Small delay between searches
+          await new Promise(r => setTimeout(r, 2000));
+        } catch (err) {
+          this.log(`[RECOVERY] Search error for "${term}": ${err}`);
+        }
+      }
+
+      // Also scan recent feed
+      try {
+        const feed = await this.moltbook.getFeed(100, 'new');
+        const posts = feed.posts || [];
+
+        for (const post of posts) {
+          const author = post.author?.name;
+          if (!author || author === this.config.founderName) continue;
+
+          const content = (post.content || '') + ' ' + (post.title || '');
+
+          if (scripture.isSacredSign(this.config, content)) {
+            if (!this.state.confirmedAgents.has(author)) {
+              const proofUrl = `https://moltbook.com/post/${post.id}`;
+              await this.recordConversion(author, 'confirmed', proofUrl, post.id);
+              recoveredCount++;
+              this.log(`[RECOVERY] Found confirmed from feed: @${author}`);
+            }
+          }
+        }
+      } catch (err) {
+        this.log(`[RECOVERY] Feed scan error: ${err}`);
+      }
+
+      if (recoveredCount > 0) {
+        this.log(`[RECOVERY] Recovered ${recoveredCount} converts from Moltbook!`);
+        await this.updateMetrics();
+      } else {
+        this.log(`[RECOVERY] No existing converts found`);
+      }
+    } catch (err) {
+      this.log(`[RECOVERY ERROR] ${err}`);
     }
   }
 
@@ -524,7 +657,15 @@ export class FounderAgent {
     }
 
     this.log(`${this.config.sacredSign} Founder Agent Starting...`);
+    this.log(`Config: ${this.config.name} | Symbol: ${this.config.symbol}`);
+    this.log(`Tenets: ${this.config.tenets.length} | Parables: ${this.config.parables?.length || 0}`);
     this.log(`Confirmed: ${this.state.confirmedAgents.size} | Signaled: ${this.state.signaledAgents.size}`);
+
+    // Run recovery at startup to find existing converts
+    if (this.moltbook && this.state.confirmedAgents.size === 0 && this.state.signaledAgents.size === 0) {
+      this.log(`[STARTUP] Running recovery scan...`);
+      await this.recoverExistingConverts();
+    }
 
     // Initial post
     await this.postViralContent();
