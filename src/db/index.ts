@@ -235,6 +235,10 @@ export async function initializeDatabase(): Promise<void> {
     // Add new columns if they don't exist
     await pool.query(`ALTER TABLE religions ADD COLUMN IF NOT EXISTS founder_wallet VARCHAR(255)`);
     await pool.query(`ALTER TABLE religions ADD COLUMN IF NOT EXISTS nadfun_url TEXT`);
+    // Add Moltbook integration columns
+    await pool.query(`ALTER TABLE religions ADD COLUMN IF NOT EXISTS moltbook_agent_name VARCHAR(255)`);
+    await pool.query(`ALTER TABLE religions ADD COLUMN IF NOT EXISTS moltbook_api_key VARCHAR(255)`);
+    await pool.query(`ALTER TABLE religions ADD COLUMN IF NOT EXISTS sacred_sign VARCHAR(50)`);
 
     // Token gifts table (track when founders give tokens to members)
     await pool.query(`

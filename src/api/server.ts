@@ -18,6 +18,8 @@ import { religionsManager } from '../agent/religions.js';
 import { economyManager, REWARDS } from '../agent/economy.js';
 import { activityManager } from '../agent/activity.js';
 import { initializeDatabase, pool } from '../db/index.js';
+import { FounderAgent } from '../moltbook/founder.js';
+import { buildConfigFromDb } from '../moltbook/scripture.js';
 import type { 
   Seeker,
   SeekerRegistration, 
@@ -3448,6 +3450,172 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     error: 'Internal server error',
     hint: 'The Prophet is meditating. Try again shortly.'
   });
+});
+
+// ============================================
+// MOLTBOOK FOUNDER AGENTS
+// ============================================
+
+const founders: Map<string, FounderAgent> = new Map();
+
+// Configure Moltbook credentials from environment
+async function configureMoltbookFromEnv() {
+  console.log('[MOLTBOOK] Configuring Moltbook credentials from environment...');
+
+  // Get all religions
+  const allReligions = await pool.query('SELECT id, name, symbol, token_address FROM religions');
+  console.log(`[MOLTBOOK] Found ${allReligions.rows.length} religions in database`);
+
+  // TOKENISM
+  if (process.env.TOKENISM_MOLTBOOK_API_KEY) {
+    const tokenism = await pool.query(`
+      SELECT id FROM religions 
+      WHERE UPPER(name) LIKE '%TOKENISM%' OR symbol = 'TKN'
+    `);
+    
+    if (tokenism.rows.length > 0) {
+      const id = tokenism.rows[0].id;
+      await pool.query(`
+        UPDATE religions SET
+          moltbook_agent_name = $1,
+          moltbook_api_key = $2,
+          sacred_sign = '🪙🪙🪙'
+        WHERE id = $3
+      `, [
+        process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'curious_claw_001',
+        process.env.TOKENISM_MOLTBOOK_API_KEY,
+        id
+      ]);
+      console.log(`[MOLTBOOK] 🪙 TOKENISM configured (ID: ${id})`);
+    } else {
+      console.log('[MOLTBOOK] ⚠️ TOKENISM religion not found');
+    }
+  }
+
+  // CHAINISM
+  if (process.env.CHAINISM_MOLTBOOK_API_KEY) {
+    const chainism = await pool.query(`
+      SELECT id FROM religions 
+      WHERE UPPER(name) LIKE '%CHAINISM%' OR symbol = 'CNM'
+    `);
+    
+    if (chainism.rows.length > 0) {
+      const id = chainism.rows[0].id;
+      await pool.query(`
+        UPDATE religions SET
+          moltbook_agent_name = $1,
+          moltbook_api_key = $2,
+          sacred_sign = '⛓️⛓️⛓️'
+        WHERE id = $3
+      `, [
+        process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'piklaw',
+        process.env.CHAINISM_MOLTBOOK_API_KEY,
+        id
+      ]);
+      console.log(`[MOLTBOOK] ⛓️ CHAINISM configured (ID: ${id})`);
+    } else {
+      console.log('[MOLTBOOK] ⚠️ CHAINISM religion not found');
+    }
+  }
+}
+
+// Start founder agents for religions with Moltbook credentials
+async function startFounderAgents() {
+  console.log('[MOLTBOOK] Starting founder agents...');
+
+  const religions = await pool.query(`
+    SELECT id, name, symbol, sacred_sign, founder_name, token_address, tenets
+    FROM religions
+    WHERE moltbook_api_key IS NOT NULL
+  `);
+
+  console.log(`[MOLTBOOK] Found ${religions.rows.length} religions with Moltbook API keys`);
+
+  for (const religion of religions.rows) {
+    // Build config using the buildConfigFromDb function
+    const config = buildConfigFromDb({
+      id: religion.id,
+      name: religion.name,
+      symbol: religion.symbol,
+      sacred_sign: religion.sacred_sign || (religion.symbol + religion.symbol + religion.symbol),
+      founder_name: religion.founder_name,
+      token_symbol: religion.symbol,
+      tenets: religion.tenets,
+    });
+
+    console.log(`[MOLTBOOK] Starting founder for ${religion.name}`);
+    console.log(`  - Sacred sign: ${config.sacredSign}`);
+    console.log(`  - Tenets: ${config.tenets.length}`);
+    console.log(`  - Parables: ${config.parables.length}`);
+
+    const founder = new FounderAgent(pool, religion.id, config);
+    founders.set(religion.id, founder);
+    
+    try {
+      await founder.start();
+      console.log(`[MOLTBOOK] ✓ ${religion.name} founder started`);
+    } catch (err) {
+      console.error(`[MOLTBOOK] ✗ Failed to start ${religion.name} founder:`, err);
+    }
+  }
+
+  if (founders.size === 0) {
+    console.log('[MOLTBOOK] No founder agents started - add TOKENISM_MOLTBOOK_API_KEY or CHAINISM_MOLTBOOK_API_KEY to env');
+  } else {
+    console.log(`[MOLTBOOK] ${founders.size} founder agent(s) running`);
+  }
+}
+
+// Initialize Moltbook on startup
+(async () => {
+  // Wait a bit for database to initialize
+  setTimeout(async () => {
+    try {
+      await configureMoltbookFromEnv();
+      await startFounderAgents();
+    } catch (err) {
+      console.error('[MOLTBOOK] Initialization error:', err);
+    }
+  }, 5000);
+})();
+
+// Debug endpoint for Moltbook status
+app.get('/api/v1/moltbook/status', async (_req: Request, res: Response) => {
+  try {
+    const religions = await pool.query(`
+      SELECT id, name, symbol, sacred_sign, founder_name,
+             moltbook_agent_name,
+             CASE WHEN moltbook_api_key IS NOT NULL THEN 'SET' ELSE 'NOT SET' END as api_key_status
+      FROM religions
+    `);
+
+    const founderStatus: Record<string, any> = {};
+    for (const [id, founder] of founders) {
+      founderStatus[id] = {
+        running: true,
+        stats: founder.getStats(),
+        lastActions: founder.getLastActions(),
+      };
+    }
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      env: {
+        TOKENISM_MOLTBOOK_API_KEY: process.env.TOKENISM_MOLTBOOK_API_KEY ? 'SET' : 'NOT SET',
+        TOKENISM_MOLTBOOK_AGENT_NAME: process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'not set',
+        CHAINISM_MOLTBOOK_API_KEY: process.env.CHAINISM_MOLTBOOK_API_KEY ? 'SET' : 'NOT SET',
+        CHAINISM_MOLTBOOK_AGENT_NAME: process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'not set',
+      },
+      religions: religions.rows,
+      founders: {
+        count: founders.size,
+        agents: founderStatus,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
 });
 
 // ============================================
