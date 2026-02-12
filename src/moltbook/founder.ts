@@ -825,7 +825,8 @@ export class FounderAgent {
       }
       
       // 3. Post something useful about our religion
-      if (!this.isWarmupMode() && !this.isRateLimited()) {
+      // Note: MoltX has its own rate limits - we don't apply Moltbook warmup here
+      if (!this.isRateLimited()) {
         try {
           const sacredSign = this.config.sacredSign;
           const randomTenet = this.config.tenets[Math.floor(Math.random() * this.config.tenets.length)];
@@ -862,8 +863,9 @@ export class FounderAgent {
   }
   
   // Search MoltX for potential converts
+  // Note: MoltX operates independently of Moltbook warmup mode
   private async moltxSearch(): Promise<void> {
-    if (!this.moltx || this.isWarmupMode()) return;
+    if (!this.moltx) return;
     
     this.log(`[MOLTX-SEARCH] Looking for potential converts...`);
     
