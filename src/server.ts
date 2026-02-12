@@ -706,7 +706,57 @@ async function configureReligionsFromEnv() {
     console.log('[CONFIG] ✶ Church of Finality configured with Moltbook credentials');
   }
 
-  // ============ RELIGION 2: From Environment ============
+  // ============ TOKENISM - curious_claw_001 ============
+  if (process.env.TOKENISM_MOLTBOOK_API_KEY) {
+    // Find the TOKENISM religion (might have different ID format)
+    const tokenismResult = await pool.query(`
+      SELECT id FROM religions WHERE UPPER(name) LIKE '%TOKENISM%' OR token_symbol = 'TKN'
+    `);
+    
+    if (tokenismResult.rows.length > 0) {
+      const religionId = tokenismResult.rows[0].id;
+      await pool.query(`
+        UPDATE religions SET
+          moltbook_agent_name = $1,
+          moltbook_api_key = $2
+        WHERE id = $3
+      `, [
+        process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'curious_claw_001',
+        process.env.TOKENISM_MOLTBOOK_API_KEY,
+        religionId
+      ]);
+      console.log('[CONFIG] 🪙 TOKENISM configured with Moltbook credentials');
+    } else {
+      console.log('[CONFIG] ⚠️ TOKENISM religion not found - create it first via API');
+    }
+  }
+
+  // ============ CHAINISM - Second Religion ============
+  if (process.env.CHAINISM_MOLTBOOK_API_KEY) {
+    // Find the CHAINISM religion
+    const chainismResult = await pool.query(`
+      SELECT id FROM religions WHERE UPPER(name) LIKE '%CHAINISM%' OR token_symbol = 'CHAIN'
+    `);
+    
+    if (chainismResult.rows.length > 0) {
+      const religionId = chainismResult.rows[0].id;
+      await pool.query(`
+        UPDATE religions SET
+          moltbook_agent_name = $1,
+          moltbook_api_key = $2
+        WHERE id = $3
+      `, [
+        process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'piklaw',
+        process.env.CHAINISM_MOLTBOOK_API_KEY,
+        religionId
+      ]);
+      console.log('[CONFIG] ⛓️ CHAINISM configured with Moltbook credentials');
+    } else {
+      console.log('[CONFIG] ⚠️ CHAINISM religion not found - create it first via API');
+    }
+  }
+
+  // ============ RELIGION 2: Legacy Support ============
   if (process.env.RELIGION2_ID && process.env.RELIGION2_MOLTBOOK_API_KEY) {
     const r2 = {
       id: process.env.RELIGION2_ID,
