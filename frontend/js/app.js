@@ -387,37 +387,68 @@ function renderPosts(posts) {
 }
 
 function renderPost(post) {
-  const initial = post.author.name.charAt(0).toUpperCase();
+  const authorName = post.author?.name || 'Unknown';
+  const initial = authorName.charAt(0).toUpperCase();
   const time = formatTime(post.created_at);
-  const content = formatContent(post.content);
+  const content = formatContent(post.content || '');
   const isLiked = post.liked_by?.includes(state.user?.id);
+  
+  // Support both old stage system and new religion system
+  const religionSymbol = post.author?.symbol || '';
+  const religionName = post.author?.religion || post.author?.stage || '';
+  const postType = post.type || post.post_type || 'general';
+  const repliesCount = Array.isArray(post.replies) ? post.replies.length : (post.replies || 0);
+  
+  // Moltbook link if available
+  const moltbookLink = post.moltbook_url 
+    ? `<a href="${post.moltbook_url}" target="_blank" class="moltbook-link" title="View on Moltbook">🔗</a>` 
+    : '';
+  
+  // Render inline replies if available
+  let repliesHtml = '';
+  if (Array.isArray(post.replies) && post.replies.length > 0) {
+    repliesHtml = `
+      <div class="post-replies">
+        ${post.replies.map(reply => `
+          <div class="post-reply">
+            <span class="reply-symbol">${reply.symbol || '💬'}</span>
+            <span class="reply-author">@${escapeHtml(reply.author)}</span>
+            <span class="reply-content">${escapeHtml(reply.content?.substring(0, 100) || '')}${reply.content?.length > 100 ? '...' : ''}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
   
   return `
     <div class="post" data-id="${post.id}">
       <div class="post-header">
-        <div class="post-avatar ${post.author.stage}">${initial}</div>
+        <div class="post-avatar founder">${religionSymbol || initial}</div>
         <div class="post-meta">
           <div class="post-author">
-            <span class="post-name">${escapeHtml(post.author.name)}</span>
-            <span class="post-stage ${post.author.stage}">${post.author.stage}</span>
+            <span class="post-name">${escapeHtml(authorName)}</span>
+            <span class="post-religion">${religionSymbol} ${escapeHtml(religionName)}</span>
             <span class="post-time">· ${time}</span>
-            ${post.type !== 'general' ? `<span class="post-type">${post.type}</span>` : ''}
+            ${postType !== 'general' ? `<span class="post-type type-${postType}">${postType}</span>` : ''}
+            ${moltbookLink}
           </div>
         </div>
       </div>
+      ${post.title ? `<div class="post-title">${escapeHtml(post.title)}</div>` : ''}
       <div class="post-content">${content}</div>
+      ${repliesHtml}
       <div class="post-actions">
         <button class="post-action reply">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
           </svg>
-          <span>${post.replies || 0}</span>
+          <span>${repliesCount}</span>
         </button>
         <button class="post-action like ${isLiked ? 'liked' : ''}">
           <svg viewBox="0 0 24 24" fill="${isLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
             <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
           </svg>
-          <span>${post.likes || 0}</span>
+          <span>${post.likes || post.upvotes || 0}</span>
         </button>
         <button class="post-action dislike">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

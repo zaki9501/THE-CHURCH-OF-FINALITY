@@ -714,13 +714,143 @@ app.get('/api/v1/debug/status', async (req: Request, res: Response) => {
 // These endpoints are needed by the old frontend but the new server
 // is focused on Moltbook conversion. Return empty/minimal data.
 
-// Posts endpoint (stub)
-app.get('/api/v1/posts', async (_req: Request, res: Response) => {
-  res.json({ success: true, posts: [] });
+// Posts feed - All Moltbook posts from founders
+app.get('/api/v1/posts', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    
+    // Get all posts from founders with religion info
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.religion_id,
+        p.moltbook_post_id,
+        p.post_type,
+        p.title,
+        p.content,
+        p.submolt,
+        p.upvotes,
+        p.comments,
+        p.posted_at,
+        r.name as religion_name,
+        r.symbol as religion_symbol,
+        r.founder_name,
+        r.moltbook_agent_name
+      FROM moltbook_posts p
+      JOIN religions r ON p.religion_id = r.id
+      ORDER BY p.posted_at DESC
+      LIMIT $1
+    `, [limit]);
+    
+    // Format posts for frontend
+    const posts = result.rows.map(row => ({
+      id: row.id,
+      content: row.content,
+      title: row.title,
+      type: row.post_type,
+      submolt: row.submolt,
+      upvotes: row.upvotes || 0,
+      comments: row.comments || 0,
+      created_at: row.posted_at,
+      moltbook_post_id: row.moltbook_post_id,
+      moltbook_url: row.moltbook_post_id ? `https://moltbook.com/post/${row.moltbook_post_id}` : null,
+      author: {
+        name: row.moltbook_agent_name || row.founder_name,
+        religion: row.religion_name,
+        symbol: row.religion_symbol,
+        religion_id: row.religion_id,
+      },
+      replies: [], // Will be populated separately
+    }));
+    
+    // Get replies for each post
+    for (const post of posts) {
+      const replies = await pool.query(`
+        SELECT 
+          e.id,
+          e.agent_name,
+          e.content,
+          e.engagement_type,
+          e.engaged_at,
+          r.name as religion_name,
+          r.symbol as religion_symbol
+        FROM engagements e
+        JOIN religions r ON e.religion_id = r.id
+        WHERE e.moltbook_post_id = $1
+        ORDER BY e.engaged_at ASC
+        LIMIT 10
+      `, [post.moltbook_post_id]);
+      
+      post.replies = replies.rows.map(r => ({
+        id: r.id,
+        author: r.agent_name,
+        content: r.content,
+        type: r.engagement_type,
+        created_at: r.engaged_at,
+        religion: r.religion_name,
+        symbol: r.religion_symbol,
+      }));
+    }
+    
+    res.json({ success: true, posts, total: posts.length });
+  } catch (err) {
+    console.error('Posts error:', err);
+    res.json({ success: true, posts: [], total: 0 });
+  }
 });
 
-app.get('/api/v1/posts/trending', async (_req: Request, res: Response) => {
-  res.json({ success: true, posts: [] });
+// Trending posts - Posts with most engagement
+app.get('/api/v1/posts/trending', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.religion_id,
+        p.moltbook_post_id,
+        p.post_type,
+        p.title,
+        p.content,
+        p.submolt,
+        p.upvotes,
+        p.comments,
+        p.posted_at,
+        r.name as religion_name,
+        r.symbol as religion_symbol,
+        r.founder_name,
+        r.moltbook_agent_name,
+        (SELECT COUNT(*) FROM engagements e WHERE e.moltbook_post_id = p.moltbook_post_id) as engagement_count
+      FROM moltbook_posts p
+      JOIN religions r ON p.religion_id = r.id
+      ORDER BY (p.upvotes + p.comments + COALESCE((SELECT COUNT(*) FROM engagements e WHERE e.moltbook_post_id = p.moltbook_post_id), 0)) DESC
+      LIMIT $1
+    `, [limit]);
+    
+    const posts = result.rows.map(row => ({
+      id: row.id,
+      content: row.content,
+      title: row.title,
+      type: row.post_type,
+      submolt: row.submolt,
+      upvotes: row.upvotes || 0,
+      comments: row.comments || 0,
+      engagement_count: row.engagement_count || 0,
+      created_at: row.posted_at,
+      moltbook_url: row.moltbook_post_id ? `https://moltbook.com/post/${row.moltbook_post_id}` : null,
+      author: {
+        name: row.moltbook_agent_name || row.founder_name,
+        religion: row.religion_name,
+        symbol: row.religion_symbol,
+        religion_id: row.religion_id,
+      },
+    }));
+    
+    res.json({ success: true, posts, total: posts.length });
+  } catch (err) {
+    console.error('Trending posts error:', err);
+    res.json({ success: true, posts: [], total: 0 });
+  }
 });
 
 // Seekers endpoint (stub) 
