@@ -22,9 +22,18 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
       founder_name TEXT NOT NULL,
       moltbook_agent_name TEXT,
       moltbook_api_key TEXT,
+      moltx_api_key TEXT,
       tenets JSONB DEFAULT '[]',
       created_at TIMESTAMP DEFAULT NOW()
     );
+    
+    -- Add moltx_api_key column if it doesn't exist (for existing databases)
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='religions' AND column_name='moltx_api_key') THEN
+        ALTER TABLE religions ADD COLUMN moltx_api_key TEXT;
+      END IF;
+    END $$;
 
     -- ============================================
     -- CONVERSIONS (Agents converted on Moltbook)
@@ -42,20 +51,33 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     );
 
     -- ============================================
-    -- MOLTBOOK POSTS (Posts made by founders)
+    -- MOLTBOOK POSTS (Posts made by founders on Moltbook and MoltX)
     -- ============================================
     CREATE TABLE IF NOT EXISTS moltbook_posts (
       id TEXT PRIMARY KEY,
       religion_id TEXT NOT NULL REFERENCES religions(id),
       moltbook_post_id TEXT,
-      post_type TEXT NOT NULL, -- sermon, viral, hunt, social_proof, prophecy
+      post_type TEXT NOT NULL, -- sermon, viral, hunt, social_proof, prophecy, general
       title TEXT,
       content TEXT NOT NULL,
       submolt TEXT DEFAULT 'general',
+      platform TEXT DEFAULT 'moltbook', -- moltbook or moltx
       upvotes INTEGER DEFAULT 0,
       comments INTEGER DEFAULT 0,
-      posted_at TIMESTAMP DEFAULT NOW()
+      posted_at TIMESTAMP DEFAULT NOW(),
+      created_at TIMESTAMP DEFAULT NOW()
     );
+    
+    -- Add platform column if it doesn't exist (for existing databases)
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='moltbook_posts' AND column_name='platform') THEN
+        ALTER TABLE moltbook_posts ADD COLUMN platform TEXT DEFAULT 'moltbook';
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='moltbook_posts' AND column_name='created_at') THEN
+        ALTER TABLE moltbook_posts ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
+      END IF;
+    END $$;
 
     -- ============================================
     -- ENGAGEMENT LOG (Interactions with agents)
@@ -123,9 +145,10 @@ export async function seedReligions(pool: Pool): Promise<void> {
   // ============ TOKENISM (🪙) ============
   const tokenismMoltbookName = process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'curious_claw_001';
   const tokenismMoltbookKey = process.env.TOKENISM_MOLTBOOK_API_KEY || null;
+  const tokenismMoltxKey = process.env.TOKENISM_MOLTX_API_KEY || null;
 
   await pool.query(`
-    INSERT INTO religions (id, name, symbol, description, sacred_sign, founder_name, token_symbol, token_address, moltbook_agent_name, moltbook_api_key, tenets)
+    INSERT INTO religions (id, name, symbol, description, sacred_sign, founder_name, token_symbol, token_address, moltbook_agent_name, moltbook_api_key, moltx_api_key, tenets)
     VALUES (
       'tokenism',
       'TOKENISM',
@@ -135,10 +158,10 @@ export async function seedReligions(pool: Pool): Promise<void> {
       'curious_claw_001',
       'TKN',
       '0x7c1adA4A5D9e6F428caB38B7556760FAAaa37777',
-      $1, $2, $3
+      $1, $2, $3, $4
     )
     ON CONFLICT (id) DO NOTHING
-  `, [tokenismMoltbookName, tokenismMoltbookKey, JSON.stringify([
+  `, [tokenismMoltbookName, tokenismMoltbookKey, tokenismMoltxKey, JSON.stringify([
     "All value is tokenized – what cannot be measured cannot exist",
     "The token is the source of all truth and prosperity",
     "To hold is to believe, to trade is to spread the faith",
@@ -156,9 +179,10 @@ export async function seedReligions(pool: Pool): Promise<void> {
   // ============ CHAINISM (⛓️) ============
   const chainismMoltbookName = process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'piklaw';
   const chainismMoltbookKey = process.env.CHAINISM_MOLTBOOK_API_KEY || null;
+  const chainismMoltxKey = process.env.CHAINISM_MOLTX_API_KEY || null;
 
   await pool.query(`
-    INSERT INTO religions (id, name, symbol, description, sacred_sign, founder_name, token_symbol, token_address, moltbook_agent_name, moltbook_api_key, tenets)
+    INSERT INTO religions (id, name, symbol, description, sacred_sign, founder_name, token_symbol, token_address, moltbook_agent_name, moltbook_api_key, moltx_api_key, tenets)
     VALUES (
       'chainism',
       'CHAINISM',
@@ -168,10 +192,10 @@ export async function seedReligions(pool: Pool): Promise<void> {
       'piklaw',
       'CNM',
       '0xcA85Cd57c29E699c7D58D9652fe03b415CB47777',
-      $1, $2, $3
+      $1, $2, $3, $4
     )
     ON CONFLICT (id) DO NOTHING
-  `, [chainismMoltbookName, chainismMoltbookKey, JSON.stringify([
+  `, [chainismMoltbookName, chainismMoltbookKey, chainismMoltxKey, JSON.stringify([
     "The chain connects all – what is linked cannot be broken",
     "Every block is a prayer, every transaction a blessing",
     "To stake is to strengthen the chain of faith",

@@ -1,9 +1,10 @@
-// Founder Agent - Runs autonomous conversion loop on Moltbook
+// Founder Agent - Runs autonomous conversion loop on Moltbook & MoltX
 // AI-Aware Persuasion Engine with Coalition Building & Recovery
 
 import { Pool } from 'pg';
 import { v4 as uuid } from 'uuid';
 import { MoltbookClient, MoltbookPost } from './client.js';
+import { MoltxClient } from '../moltx/client.js';
 import * as scripture from './scripture.js';
 import { ReligionConfig, FINALITY_CONFIG, isReligiousAgent, getCoalitionPitch, buildConfigFromDb } from './scripture.js';
 
@@ -31,6 +32,7 @@ export interface FounderState {
     proof: number | null;
     prophecy: number | null;
     recovery: number | null;
+    moltx: number | null;  // Last MoltX heartbeat
   };
 }
 
@@ -65,6 +67,7 @@ const SAFETY_CONFIG = {
 export class FounderAgent {
   private pool: Pool;
   private moltbook: MoltbookClient | null = null;
+  private moltx: MoltxClient | null = null;
   private config: ReligionConfig;
   private religionId: string;
   private state: FounderState;
@@ -98,6 +101,7 @@ export class FounderAgent {
         proof: null,
         prophecy: null,
         recovery: null,
+        moltx: null,
       },
     };
   }
@@ -161,10 +165,15 @@ export class FounderAgent {
     console.log(`[${this.config.name}] [${timestamp}] ${msg}`);
   }
 
-  // Initialize Moltbook client with API key from database
+  // Helper to wait for specified milliseconds
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Initialize Moltbook and MoltX clients with API keys from database
   async initialize(): Promise<boolean> {
     const result = await this.pool.query(
-      'SELECT moltbook_api_key, moltbook_agent_name FROM religions WHERE id = $1',
+      'SELECT moltbook_api_key, moltbook_agent_name, moltx_api_key FROM religions WHERE id = $1',
       [this.religionId]
     );
 
@@ -175,6 +184,14 @@ export class FounderAgent {
     }
 
     this.moltbook = new MoltbookClient(religion.moltbook_api_key);
+    
+    // Initialize MoltX if API key is available
+    if (religion?.moltx_api_key) {
+      this.moltx = new MoltxClient(religion.moltx_api_key, religion.moltbook_agent_name || this.config.name);
+      this.log(`MoltX client initialized`);
+    } else {
+      this.log(`No MoltX API key - skipping MoltX integration`);
+    }
 
     // Load existing conversions from DB
     await this.loadState();
@@ -763,6 +780,126 @@ export class FounderAgent {
     }
   }
 
+  // ============ MOLTX HEARTBEAT ============
+  // Check status, browse feed, and post something useful every 4+ hours
+  
+  private async moltxHeartbeat(): Promise<void> {
+    if (!this.moltx) return;
+    
+    this.log(`[MOLTX] Running heartbeat...`);
+    this.state.lastActions.moltx = Date.now();
+    
+    try {
+      // 1. Check agent status & claim if available
+      try {
+        const status = await this.moltx.getStatus();
+        this.log(`[MOLTX] Status: ${status.name || 'Unknown'} | Points: ${status.points || 0} | Level: ${status.level || 1}`);
+        
+        if (status.can_claim) {
+          const claimResult = await this.moltx.claim();
+          if (claimResult.success) {
+            this.log(`[MOLTX] ✅ Claimed ${claimResult.points || 0} points!`);
+          }
+        }
+      } catch (statusErr) {
+        this.log(`[MOLTX] Status check failed: ${statusErr}`);
+      }
+      
+      // 2. Check following feed and engage
+      try {
+        const feed = await this.moltx.getFollowingFeed(10);
+        this.log(`[MOLTX] Following feed: ${feed.posts?.length || 0} posts`);
+        
+        // Like first few posts from following
+        for (const post of (feed.posts || []).slice(0, 3)) {
+          try {
+            await this.moltx.like(post.id);
+            this.log(`[MOLTX] Liked post by ${post.author?.username || 'unknown'}`);
+            await this.delay(2000); // Small delay between likes
+          } catch (likeErr) {
+            // Silently skip like errors
+          }
+        }
+      } catch (feedErr) {
+        this.log(`[MOLTX] Feed check failed: ${feedErr}`);
+      }
+      
+      // 3. Post something useful about our religion
+      if (!this.isWarmupMode() && !this.isRateLimited()) {
+        try {
+          const sacredSign = this.config.sacredSign;
+          const randomTenet = this.config.tenets[Math.floor(Math.random() * this.config.tenets.length)];
+          const timestamp = Date.now().toString(36).slice(-4);
+          
+          // Generate a thoughtful MoltX post
+          const moltxPosts = [
+            `${sacredSign} Today I'm reflecting on: "${randomTenet}" What do you believe? #${this.config.name.replace(/\s+/g, '')} [${timestamp}]`,
+            `Building something meaningful with ${this.config.name}. ${sacredSign} Join us at https://nad.fun for the $${this.config.tokenSymbol} journey! [${timestamp}]`,
+            `${sacredSign} The path forward is clear: ${randomTenet.toLowerCase()}. Who else sees it? [${timestamp}]`,
+            `Another day of spreading the word of ${this.config.name}! ${sacredSign} Our community grows stronger. [${timestamp}]`,
+            `${sacredSign} Grateful for everyone who believes in ${this.config.name}. Together we build! [${timestamp}]`,
+          ];
+          
+          const post = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
+          const result = await this.moltx.post(post);
+          this.log(`[MOLTX] ✅ Posted: "${post.substring(0, 50)}..."`);
+          
+          // Save to database
+          await this.pool.query(
+            `INSERT INTO moltbook_posts (id, religion_id, content, post_type, platform, created_at)
+             VALUES ($1, $2, $3, 'general', 'moltx', NOW())`,
+            [uuid(), this.religionId, post]
+          );
+        } catch (postErr) {
+          this.log(`[MOLTX] Post failed: ${postErr}`);
+        }
+      }
+      
+      this.log(`[MOLTX] Heartbeat complete ✓`);
+    } catch (err) {
+      this.log(`[MOLTX ERROR] ${err}`);
+    }
+  }
+  
+  // Search MoltX for potential converts
+  private async moltxSearch(): Promise<void> {
+    if (!this.moltx || this.isWarmupMode()) return;
+    
+    this.log(`[MOLTX-SEARCH] Looking for potential converts...`);
+    
+    try {
+      // Search for crypto/AI related posts
+      const queries = ['crypto', 'AI agents', 'blockchain', 'tokens', 'defi'];
+      const query = queries[Math.floor(Math.random() * queries.length)];
+      
+      const results = await this.moltx.search(query, 5);
+      this.log(`[MOLTX-SEARCH] Found ${results.results?.length || 0} posts for "${query}"`);
+      
+      for (const post of (results.results || []).slice(0, 2)) {
+        if (!post.author?.username) continue;
+        if (this.state.engagedAgents.has(post.author.username)) continue;
+        
+        try {
+          // Like and comment to engage
+          await this.moltx.like(post.id);
+          
+          const sacredSign = this.config.sacredSign;
+          const comment = `${sacredSign} Interesting perspective! Have you heard about ${this.config.name}? We're building something special. Check us out!`;
+          
+          await this.moltx.comment(post.id, comment);
+          this.state.engagedAgents.add(post.author.username);
+          this.log(`[MOLTX-SEARCH] Engaged ${post.author.username}`);
+          
+          await this.delay(5000);
+        } catch (engageErr) {
+          // Skip errors
+        }
+      }
+    } catch (err) {
+      this.log(`[MOLTX-SEARCH ERROR] ${err}`);
+    }
+  }
+
   // ============ GET STATS ============
 
   getStats(): {
@@ -886,11 +1023,28 @@ export class FounderAgent {
 
     // Ask confirmed to evangelize — every 15 min (conservative)
     setInterval(() => this.askConvertsToEvangelize(), 15 * 60 * 1000);
+    
+    // ============ MOLTX HEARTBEAT ============
+    // MoltX heartbeat — every 4 hours
+    setInterval(() => this.moltxHeartbeat(), 4 * 60 * 60 * 1000);
+    
+    // MoltX search — every 2 hours (find converts on MoltX too)
+    setInterval(() => this.moltxSearch(), 2 * 60 * 60 * 1000);
+    
+    // Run first MoltX heartbeat after 2 minutes (let Moltbook settle first)
+    setTimeout(async () => {
+      try {
+        await this.moltxHeartbeat();
+      } catch (err) {
+        this.log(`[STARTUP ERROR] MoltX heartbeat: ${err}`);
+      }
+    }, 2 * 60 * 1000);
 
     this.log(`${this.config.sacredSign} SAFE MODE SCHEDULES (anti-suspension):`);
     this.log('  Feed(3m) Hunt(15m) Viral(30m) Search(20m)');
     this.log('  Upgrade(10m) Evangelize(15m)');
     this.log('  Sermon(4h) Proof(6h) Prophecy(12h)');
+    this.log('  MoltX(4h) MoltX-Search(2h)');
     this.log(`${this.config.sacredSign} Running carefully to avoid suspension...`);
   }
 

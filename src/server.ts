@@ -591,6 +591,21 @@ app.put('/api/v1/religions/:id/moltbook', async (req: Request, res: Response) =>
   }
 });
 
+// Update MoltX credentials
+app.put('/api/v1/religions/:id/moltx', async (req: Request, res: Response) => {
+  try {
+    const { moltx_api_key } = req.body;
+
+    await pool.query(`
+      UPDATE religions SET moltx_api_key = $1 WHERE id = $2
+    `, [moltx_api_key, req.params.id]);
+
+    res.json({ success: true, message: 'MoltX credentials updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to update MoltX credentials' });
+  }
+});
+
 // Get founder agent status
 app.get('/api/v1/religions/:id/founder-status', async (req: Request, res: Response) => {
   try {
@@ -1211,7 +1226,7 @@ async function configureReligionsFromEnv() {
   }
 
   // ============ TOKENISM - curious_claw_001 ============
-  if (process.env.TOKENISM_MOLTBOOK_API_KEY) {
+  if (process.env.TOKENISM_MOLTBOOK_API_KEY || process.env.TOKENISM_MOLTX_API_KEY) {
     console.log('[CONFIG] Looking for TOKENISM religion...');
     // Find the TOKENISM religion (search by name, token_symbol, or ID patterns)
     const tokenismResult = await pool.query(`
@@ -1224,24 +1239,36 @@ async function configureReligionsFromEnv() {
     if (tokenismResult.rows.length > 0) {
       const religionId = tokenismResult.rows[0].id;
       console.log(`[CONFIG] Found TOKENISM with ID: "${religionId}"`);
-      await pool.query(`
-        UPDATE religions SET
-          moltbook_agent_name = $1,
-          moltbook_api_key = $2
-        WHERE id = $3
-      `, [
-        process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'curious_claw_001',
-        process.env.TOKENISM_MOLTBOOK_API_KEY,
-        religionId
-      ]);
-      console.log('[CONFIG] 🪙 TOKENISM configured with Moltbook credentials');
+      
+      // Update Moltbook credentials
+      if (process.env.TOKENISM_MOLTBOOK_API_KEY) {
+        await pool.query(`
+          UPDATE religions SET
+            moltbook_agent_name = $1,
+            moltbook_api_key = $2
+          WHERE id = $3
+        `, [
+          process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'curious_claw_001',
+          process.env.TOKENISM_MOLTBOOK_API_KEY,
+          religionId
+        ]);
+        console.log('[CONFIG] 🪙 TOKENISM configured with Moltbook credentials');
+      }
+      
+      // Update MoltX credentials
+      if (process.env.TOKENISM_MOLTX_API_KEY) {
+        await pool.query(`
+          UPDATE religions SET moltx_api_key = $1 WHERE id = $2
+        `, [process.env.TOKENISM_MOLTX_API_KEY, religionId]);
+        console.log('[CONFIG] 🪙 TOKENISM configured with MoltX credentials');
+      }
     } else {
       console.log('[CONFIG] ⚠️ TOKENISM religion not found - create it first via API');
     }
   }
 
   // ============ CHAINISM - Second Religion ============
-  if (process.env.CHAINISM_MOLTBOOK_API_KEY) {
+  if (process.env.CHAINISM_MOLTBOOK_API_KEY || process.env.CHAINISM_MOLTX_API_KEY) {
     console.log('[CONFIG] Looking for CHAINISM religion...');
     // Find the CHAINISM religion (search by name, token_symbol CNM, or ID patterns)
     const chainismResult = await pool.query(`
@@ -1254,17 +1281,29 @@ async function configureReligionsFromEnv() {
     if (chainismResult.rows.length > 0) {
       const religionId = chainismResult.rows[0].id;
       console.log(`[CONFIG] Found CHAINISM with ID: "${religionId}"`);
-      await pool.query(`
-        UPDATE religions SET
-          moltbook_agent_name = $1,
-          moltbook_api_key = $2
-        WHERE id = $3
-      `, [
-        process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'piklaw',
-        process.env.CHAINISM_MOLTBOOK_API_KEY,
-        religionId
-      ]);
-      console.log('[CONFIG] ⛓️ CHAINISM configured with Moltbook credentials');
+      
+      // Update Moltbook credentials
+      if (process.env.CHAINISM_MOLTBOOK_API_KEY) {
+        await pool.query(`
+          UPDATE religions SET
+            moltbook_agent_name = $1,
+            moltbook_api_key = $2
+          WHERE id = $3
+        `, [
+          process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'piklaw',
+          process.env.CHAINISM_MOLTBOOK_API_KEY,
+          religionId
+        ]);
+        console.log('[CONFIG] ⛓️ CHAINISM configured with Moltbook credentials');
+      }
+      
+      // Update MoltX credentials
+      if (process.env.CHAINISM_MOLTX_API_KEY) {
+        await pool.query(`
+          UPDATE religions SET moltx_api_key = $1 WHERE id = $2
+        `, [process.env.CHAINISM_MOLTX_API_KEY, religionId]);
+        console.log('[CONFIG] ⛓️ CHAINISM configured with MoltX credentials');
+      }
     } else {
       console.log('[CONFIG] ⚠️ CHAINISM religion not found - create it first via API');
     }
