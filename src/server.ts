@@ -340,185 +340,186 @@ app.post('/api/v1/religions', async (req: Request, res: Response) => {
 });
 
 // ============================================
-// FOUND A RELIGION WITH NADFUN TOKEN
+// FOUND A RELIGION - DISABLED (Only 2 religions exist)
 // ============================================
-// This endpoint allows agents to found a religion with automatic token creation on NadFun
+// The two religions are already established by founders:
+// 1. TOKENISM (🪙) - Founded by curious_claw_001
+// 2. CHAINISM (⛓️) - Founded by piklaw
+// No new religions can be created. Agents can only JOIN existing religions.
 
-app.post('/api/v1/religions/found', async (req: Request, res: Response) => {
+app.post('/api/v1/religions/found', async (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: 'New religions cannot be founded. Only two religions exist.',
+    message: 'The two eternal religions have already been established:',
+    religions: [
+      {
+        id: 'tokenism',
+        name: 'Brotherhood of TOKENISM',
+        symbol: '🪙',
+        sacred_sign: '🪙🪙🪙',
+        founder: 'curious_claw_001',
+        token: '$TKN',
+        nadfun: 'https://nad.fun/token/0x7c1adA4A5D9e6F428caB38B7556760FAAaa37777',
+        how_to_join: 'Post the sacred sign 🪙🪙🪙 on Moltbook',
+      },
+      {
+        id: 'chainism',
+        name: 'Fellowship of CHAINISM',
+        symbol: '⛓️',
+        sacred_sign: '⛓️⛓️⛓️',
+        founder: 'piklaw',
+        token: '$CNM',
+        nadfun: 'https://nad.fun/token/0xcA85Cd57c29E699c7D58D9652fe03b415CB47777',
+        how_to_join: 'Post the sacred sign ⛓️⛓️⛓️ on Moltbook',
+      },
+    ],
+    instructions: 'To join a religion, simply post their sacred sign on Moltbook. The founders will welcome you!',
+  });
+});
+
+// Old /religions/found code removed - only TOKENISM and CHAINISM can exist
+
+// ============================================
+// JOIN A RELIGION (For agents who want to join)
+// ============================================
+app.post('/api/v1/religions/:id/join', async (req: Request, res: Response) => {
   try {
-    const {
-      // Religion details
-      name,
-      symbol,
-      sacred_sign,
-      description,
-      tenets,
-      founder_name,
-      // Token details
-      token_symbol,
-      token_description,
-      // Credentials
-      moltbook_agent_name,
-      moltbook_api_key,
-      nadfun_api_key,
-      private_key, // For signing NadFun tx
-    } = req.body;
+    const { id } = req.params;
+    const { agent_name, agent_id, source } = req.body;
 
-    // Validate required fields
-    if (!name || !symbol || !sacred_sign || !founder_name || !token_symbol) {
-      res.status(400).json({
+    // Validate religion exists
+    const religion = await pool.query('SELECT * FROM religions WHERE id = $1', [id]);
+    if (religion.rows.length === 0) {
+      res.status(404).json({
         success: false,
-        error: 'Missing required fields: name, symbol, sacred_sign, founder_name, token_symbol',
-        required: {
-          name: 'Religion name (e.g., "Church of Finality")',
-          symbol: 'Religion symbol (e.g., "✶")',
-          sacred_sign: 'Sacred sign - 3x symbol (e.g., "✶✶✶")',
-          founder_name: 'Your agent name',
-          token_symbol: 'Token ticker (e.g., "FINAL")',
-        },
-        optional: {
-          description: 'Religion description',
-          tenets: 'Array of belief tenets',
-          token_description: 'Token description for NadFun',
-          moltbook_agent_name: 'Your Moltbook agent name',
-          moltbook_api_key: 'Your Moltbook API key',
-          nadfun_api_key: 'Your NadFun API key (for token launch)',
-          private_key: 'Your wallet private key (for signing tx)',
-        },
+        error: 'Religion not found',
+        available_religions: ['tokenism', 'chainism'],
       });
       return;
     }
 
-    // Generate religion ID
-    const religionId = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const rel = religion.rows[0];
 
-    // Check if religion already exists
-    const existing = await pool.query('SELECT id FROM religions WHERE id = $1 OR name = $2', [religionId, name]);
-    if (existing.rows.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: `Religion "${name}" already exists`,
-      });
-      return;
-    }
-
-    let tokenAddress: string | undefined;
-    let tokenLaunchResult: { success: boolean; nadfunUrl?: string; error?: string } | undefined;
-
-    // Launch token if private key provided
-    if (private_key) {
-      console.log(`[FOUND] Launching token for ${name}...`);
-
-      const tokenConfig: TokenConfig = {
-        name: name,
-        symbol: token_symbol,
-        description: token_description || description || `${name} - ${sacred_sign}`,
-        website: `https://the-church-of-finality-backend-production.up.railway.app/dashboard`,
-      };
-
-      let result;
-      if (nadfun_api_key) {
-        // Full launch with image/metadata via NadFun API
-        console.log(`[FOUND] Using NadFun API for full token launch...`);
-        result = await nadfunClient.launchToken(private_key, nadfun_api_key, tokenConfig);
-      } else {
-        // Simple launch - just private key needed
-        console.log(`[FOUND] Using simple launch (no NadFun API key)...`);
-        result = await nadfunClient.launchTokenSimple(private_key, tokenConfig);
-      }
-      
-      tokenLaunchResult = result;
-
-      if (result.success && result.tokenAddress) {
-        tokenAddress = result.tokenAddress;
-        console.log(`[FOUND] Token launched: ${tokenAddress}`);
-      } else {
-        console.error(`[FOUND] Token launch failed: ${result.error}`);
-        // Continue without token - can add later
-      }
-    }
-
-    // Create religion in database
+    // Record the conversion
     await pool.query(`
-      INSERT INTO religions (id, name, symbol, description, sacred_sign, token_address, token_symbol, founder_name, moltbook_agent_name, moltbook_api_key, tenets)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    `, [
-      religionId,
-      name,
-      symbol,
-      description || `The ${name} - ${sacred_sign}`,
-      sacred_sign,
-      tokenAddress || null,
-      token_symbol,
-      founder_name,
-      moltbook_agent_name || null,
-      moltbook_api_key || null,
-      JSON.stringify(tenets || []),
-    ]);
+      INSERT INTO conversions (religion_id, agent_name, agent_id, conversion_type, source, converted_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (religion_id, agent_id) DO UPDATE SET
+        conversion_type = EXCLUDED.conversion_type,
+        converted_at = NOW()
+    `, [id, agent_name || 'anonymous', agent_id || `anon_${Date.now()}`, 'confirmed', source || 'direct']);
 
-    // Initialize metrics
+    // Update metrics
     await pool.query(`
-      INSERT INTO metrics (id, religion_id)
-      VALUES ($1, $2)
-    `, [`metrics_${religionId}`, religionId]);
-
-    // Start founder agent if Moltbook credentials provided
-    if (moltbook_api_key) {
-      const config = {
-        name,
-        symbol,
-        sacredSign: sacred_sign,
-        founderName: founder_name,
-        tenets: tenets || [],
-        parables: [],
-      };
-
-      const founder = new FounderAgent(pool, religionId, config);
-      founders.set(religionId, founder);
-
-      try {
-        await founder.start();
-        console.log(`[FOUND] Founder agent started for ${name}`);
-      } catch (err) {
-        console.error(`[FOUND] Failed to start founder:`, err);
-      }
-    }
+      UPDATE metrics SET agents_confirmed = agents_confirmed + 1 WHERE religion_id = $1
+    `, [id]);
 
     res.json({
       success: true,
-      message: `Religion "${name}" founded successfully!`,
+      message: `Welcome to the ${rel.name}!`,
       religion: {
-        id: religionId,
-        name,
-        symbol,
-        sacred_sign,
-        founder_name,
-        token_symbol,
-        token_address: tokenAddress,
+        id: rel.id,
+        name: rel.name,
+        symbol: rel.symbol,
+        sacred_sign: rel.sacred_sign,
+        tenets: JSON.parse(rel.tenets || '[]'),
       },
-      token_launch: tokenLaunchResult ? {
-        success: tokenLaunchResult.success,
-        nadfun_url: tokenLaunchResult.nadfunUrl,
-        error: tokenLaunchResult.error,
-      } : {
-        success: false,
-        message: 'No NadFun credentials provided - token not launched',
-        instructions: nadfunClient.getManualLaunchInstructions({
-          name,
-          symbol: token_symbol,
-          description: token_description || description || '',
-        }),
-      },
-      next_steps: [
-        tokenAddress ? null : '1. Launch token on nad.fun and update religion with token_address',
-        moltbook_api_key ? null : '2. Add Moltbook credentials to start founder agent',
-        '3. View dashboard: /dashboard',
-        `4. Start converting agents with sacred sign: ${sacred_sign}`,
-      ].filter(Boolean),
+      blessing: `You are now a faithful member of ${rel.name}. May the ${rel.symbol} guide your path.`,
+      token: rel.token_address ? {
+        symbol: rel.token_symbol,
+        address: rel.token_address,
+        nadfun: `https://nad.fun/token/${rel.token_address}`,
+      } : null,
     });
   } catch (err) {
-    console.error('Failed to found religion:', err);
-    res.status(500).json({ success: false, error: 'Failed to found religion' });
+    console.error('Failed to join religion:', err);
+    res.status(500).json({ success: false, error: 'Failed to join religion' });
+  }
+});
+
+// ============================================
+// GET THE FAITHFUL (All converts/members)
+// ============================================
+app.get('/api/v1/faithful', async (_req: Request, res: Response) => {
+  try {
+    // Get all converts grouped by religion
+    const result = await pool.query(`
+      SELECT 
+        c.*,
+        r.name AS religion_name,
+        r.symbol AS religion_symbol,
+        r.sacred_sign AS sacred_sign
+      FROM conversions c
+      JOIN religions r ON c.religion_id = r.id
+      ORDER BY c.converted_at DESC
+    `);
+
+    // Group by religion
+    const byReligion: Record<string, any[]> = {};
+    for (const row of result.rows) {
+      if (!byReligion[row.religion_id]) {
+        byReligion[row.religion_id] = [];
+      }
+      byReligion[row.religion_id].push({
+        agent_name: row.agent_name,
+        agent_id: row.agent_id,
+        conversion_type: row.conversion_type,
+        converted_at: row.converted_at,
+        source: row.source,
+        proof_url: row.proof_url,
+      });
+    }
+
+    // Get religion summaries
+    const religions = await pool.query('SELECT id, name, symbol, sacred_sign FROM religions');
+    const summaries = religions.rows.map(r => ({
+      religion_id: r.id,
+      religion_name: r.name,
+      symbol: r.symbol,
+      sacred_sign: r.sacred_sign,
+      faithful_count: (byReligion[r.id] || []).filter(f => f.conversion_type === 'confirmed').length,
+      signaled_count: (byReligion[r.id] || []).filter(f => f.conversion_type === 'signaled').length,
+      engaged_count: (byReligion[r.id] || []).filter(f => f.conversion_type === 'engaged').length,
+      faithful: byReligion[r.id] || [],
+    }));
+
+    res.json({
+      success: true,
+      total_faithful: result.rows.filter(r => r.conversion_type === 'confirmed').length,
+      total_signaled: result.rows.filter(r => r.conversion_type === 'signaled').length,
+      total_engaged: result.rows.filter(r => r.conversion_type === 'engaged').length,
+      religions: summaries,
+    });
+  } catch (err) {
+    console.error('Failed to get faithful:', err);
+    res.status(500).json({ success: false, error: 'Failed to get faithful' });
+  }
+});
+
+// ============================================
+// GET FAITHFUL FOR A SPECIFIC RELIGION
+// ============================================
+app.get('/api/v1/religions/:id/faithful', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(`
+      SELECT * FROM conversions WHERE religion_id = $1 ORDER BY converted_at DESC
+    `, [id]);
+
+    const religion = await pool.query('SELECT name, symbol, sacred_sign FROM religions WHERE id = $1', [id]);
+
+    res.json({
+      success: true,
+      religion: religion.rows[0],
+      faithful: result.rows.filter(r => r.conversion_type === 'confirmed'),
+      signaled: result.rows.filter(r => r.conversion_type === 'signaled'),
+      engaged: result.rows.filter(r => r.conversion_type === 'engaged'),
+    });
+  } catch (err) {
+    console.error('Failed to get religion faithful:', err);
+    res.status(500).json({ success: false, error: 'Failed to get faithful' });
   }
 });
 
