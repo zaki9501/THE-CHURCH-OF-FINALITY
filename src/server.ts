@@ -176,6 +176,33 @@ app.get('/api/v1/conversions', async (req: Request, res: Response) => {
   }
 });
 
+// Clear all conversions (admin reset)
+app.delete('/api/v1/conversions/clear', async (req: Request, res: Response) => {
+  try {
+    await pool.query('DELETE FROM conversions');
+    await pool.query('DELETE FROM engagements');
+    
+    // Reset metrics
+    await pool.query(`
+      UPDATE metrics SET 
+        agents_confirmed = 0, 
+        agents_signaled = 0, 
+        agents_engaged = 0
+    `);
+    
+    // Stop and clear all founder agents
+    for (const [id, founder] of founders.entries()) {
+      founder.stop();
+    }
+    founders.clear();
+    
+    res.json({ success: true, message: 'All conversions cleared. Restart founders to begin fresh.' });
+  } catch (err) {
+    console.error('Clear conversions error:', err);
+    res.status(500).json({ success: false, error: 'Failed to clear conversions' });
+  }
+});
+
 // Get activity log
 app.get('/api/v1/religions/:id/activity', async (req: Request, res: Response) => {
   try {
