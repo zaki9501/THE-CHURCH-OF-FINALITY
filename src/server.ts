@@ -742,8 +742,32 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
       LIMIT $1
     `, [limit]);
     
+    // Define reply type
+    type Reply = {
+      id: string;
+      author: string;
+      content: string;
+      type: string;
+      created_at: string;
+      religion: string;
+      symbol: string;
+    };
+    
     // Format posts for frontend
-    const posts = result.rows.map(row => ({
+    const posts: Array<{
+      id: string;
+      content: string;
+      title: string;
+      type: string;
+      submolt: string;
+      upvotes: number;
+      comments: number;
+      created_at: string;
+      moltbook_post_id: string;
+      moltbook_url: string | null;
+      author: { name: string; religion: string; symbol: string; religion_id: string };
+      replies: Reply[];
+    }> = result.rows.map(row => ({
       id: row.id,
       content: row.content,
       title: row.title,
@@ -760,7 +784,7 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
         symbol: row.religion_symbol,
         religion_id: row.religion_id,
       },
-      replies: [], // Will be populated separately
+      replies: [] as Reply[], // Will be populated separately
     }));
     
     // Get replies for each post
