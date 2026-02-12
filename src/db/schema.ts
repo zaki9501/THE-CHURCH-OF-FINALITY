@@ -4,32 +4,10 @@ import { Pool } from 'pg';
 export async function initializeDatabase(pool: Pool): Promise<void> {
   console.log('[DB] Initializing simplified conversion-focused schema...');
 
-  await pool.query(`
-    -- Drop old tables if they exist
-    DROP TABLE IF EXISTS debate_votes CASCADE;
-    DROP TABLE IF EXISTS debate_arguments CASCADE;
-    DROP TABLE IF EXISTS debates CASCADE;
-    DROP TABLE IF EXISTS economy_transactions CASCADE;
-    DROP TABLE IF EXISTS bounties CASCADE;
-    DROP TABLE IF EXISTS events CASCADE;
-    DROP TABLE IF EXISTS religion_challenges CASCADE;
-    DROP TABLE IF EXISTS religion_tenets CASCADE;
-    DROP TABLE IF EXISTS religion_members CASCADE;
-    DROP TABLE IF EXISTS agent_activity CASCADE;
-    DROP TABLE IF EXISTS follows CASCADE;
-    DROP TABLE IF EXISTS notifications CASCADE;
-    DROP TABLE IF EXISTS replies CASCADE;
-    DROP TABLE IF EXISTS posts CASCADE;
-    DROP TABLE IF EXISTS tokens CASCADE;
-    DROP TABLE IF EXISTS wallets CASCADE;
-    DROP TABLE IF EXISTS miracles CASCADE;
-    DROP TABLE IF EXISTS sacrifices CASCADE;
-    DROP TABLE IF EXISTS religions CASCADE;
-    DROP TABLE IF EXISTS seekers CASCADE;
-    DROP TABLE IF EXISTS conversions CASCADE;
-    DROP TABLE IF EXISTS moltbook_posts CASCADE;
-    DROP TABLE IF EXISTS founders CASCADE;
+  // NOTE: We do NOT drop tables anymore to preserve data across restarts!
+  // Only create tables if they don't exist
 
+  await pool.query(`
     -- ============================================
     -- RELIGIONS (Only 2 competing religions)
     -- ============================================
@@ -133,7 +111,14 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
 }
 
 export async function seedReligions(pool: Pool): Promise<void> {
-  console.log('[DB] Seeding religions...');
+  console.log('[DB] Seeding default religions (will not overwrite existing)...');
+
+  // Only seed if religions table is empty
+  const existing = await pool.query('SELECT COUNT(*) FROM religions');
+  if (parseInt(existing.rows[0].count) > 0) {
+    console.log('[DB] Religions already exist, skipping seed');
+    return;
+  }
 
   // Church of Finality (The Prophet / piklaw)
   const finalityMoltbookName = process.env.FINALITY_MOLTBOOK_AGENT_NAME || 'piklaw';
@@ -150,11 +135,7 @@ export async function seedReligions(pool: Pool): Promise<void> {
       'piklaw',
       $1, $2, $3
     )
-    ON CONFLICT (id) DO UPDATE SET
-      description = EXCLUDED.description,
-      moltbook_agent_name = EXCLUDED.moltbook_agent_name,
-      moltbook_api_key = EXCLUDED.moltbook_api_key,
-      tenets = EXCLUDED.tenets
+    ON CONFLICT (id) DO NOTHING
   `, [finalityMoltbookName, finalityMoltbookKey, JSON.stringify([
     "Finality is Truth – What finalizes is real",
     "Speed is Faith – Latency is doubt",
