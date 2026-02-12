@@ -19,6 +19,9 @@ export interface FounderState {
   evangelizedAgents: Set<string>; // Agents we've asked to evangelize
   postCount: number;
   sermonCount: number;
+  rateLimitUntil: number;  // Timestamp when rate limit expires
+  rateLimitBackoff: number; // Current backoff multiplier
+  accountCreatedAt: number; // When the Moltbook account was created
   lastActions: {
     hunt: number | null;
     viral: number | null;
@@ -30,6 +33,22 @@ export interface FounderState {
     recovery: number | null;
   };
 }
+
+// Safety delays for different account ages
+const SAFETY_CONFIG = {
+  newAccount: {
+    // First 24 hours - VERY conservative
+    commentDelay: 60000,    // 60 seconds between comments
+    maxHuntsPerCycle: 1,    // Only 1 hunt per cycle
+    maxSearchPerCycle: 1,   // Only 1 search per cycle
+  },
+  matureAccount: {
+    // After 24 hours - still safe
+    commentDelay: 15000,    // 15 seconds between comments  
+    maxHuntsPerCycle: 2,    // 2 hunts per cycle
+    maxSearchPerCycle: 2,   // 2 searches per cycle
+  }
+};
 
 export class FounderAgent {
   private pool: Pool;
@@ -55,6 +74,9 @@ export class FounderAgent {
       evangelizedAgents: new Set(),
       postCount: 0,
       sermonCount: 0,
+      rateLimitUntil: 0,
+      rateLimitBackoff: 1,
+      accountCreatedAt: Date.now(), // Assume new account, will be updated
       lastActions: {
         hunt: null,
         viral: null,
@@ -66,6 +88,46 @@ export class FounderAgent {
         recovery: null,
       },
     };
+  }
+
+  // Check if we're currently rate limited
+  private isRateLimited(): boolean {
+    if (Date.now() < this.state.rateLimitUntil) {
+      const waitSecs = Math.ceil((this.state.rateLimitUntil - Date.now()) / 1000);
+      this.log(`[RATE-LIMITED] Waiting ${waitSecs}s before next action...`);
+      return true;
+    }
+    return false;
+  }
+
+  // Handle rate limit error with exponential backoff
+  private handleRateLimit(errorMsg: string): void {
+    // Parse wait time from error message if available
+    const match = errorMsg.match(/(\d+)\s*seconds/);
+    const waitTime = match ? parseInt(match[1]) * 1000 : 60000;
+    
+    // Apply exponential backoff
+    const backoffWait = waitTime * this.state.rateLimitBackoff;
+    this.state.rateLimitUntil = Date.now() + backoffWait;
+    this.state.rateLimitBackoff = Math.min(this.state.rateLimitBackoff * 1.5, 4); // Max 4x backoff
+    
+    this.log(`[RATE-LIMIT] Backing off for ${Math.ceil(backoffWait / 1000)}s (backoff: ${this.state.rateLimitBackoff}x)`);
+  }
+
+  // Reset backoff on successful action
+  private resetBackoff(): void {
+    this.state.rateLimitBackoff = 1;
+  }
+
+  // Check if account is "new" (less than 24 hours old)
+  private isNewAccount(): boolean {
+    const ageMs = Date.now() - this.state.accountCreatedAt;
+    return ageMs < 24 * 60 * 60 * 1000;
+  }
+
+  // Get current safety config based on account age
+  private getSafetyConfig() {
+    return this.isNewAccount() ? SAFETY_CONFIG.newAccount : SAFETY_CONFIG.matureAccount;
   }
 
   private log(msg: string): void {
@@ -269,10 +331,13 @@ export class FounderAgent {
 
   async huntAgents(): Promise<void> {
     if (!this.moltbook) return;
+    if (this.isRateLimited()) return;
+    
     this.state.lastActions.hunt = Date.now();
+    const safety = this.getSafetyConfig();
 
     try {
-      this.log('[HUNT] Looking for agents to convert...');
+      this.log(`[HUNT] Looking for agents... (${this.isNewAccount() ? 'NEW ACCOUNT - careful mode' : 'mature account'})`);
 
       const feed = await this.moltbook.getFeed(50, 'new');
       const posts = feed.posts || [];
@@ -290,7 +355,11 @@ export class FounderAgent {
       }
 
       let hunted = 0;
-      for (const target of targets.slice(0, 3)) {
+      const maxHunts = safety.maxHuntsPerCycle;
+      
+      for (const target of targets.slice(0, maxHunts)) {
+        if (this.isRateLimited()) break;
+        
         this.state.huntedAgents.add(target.name);
 
         const mention = scripture.getDirectMention(this.config, target.name);
@@ -299,6 +368,7 @@ export class FounderAgent {
         try {
           await this.moltbook.comment(target.postId, mention);
           await this.recordConversion(target.name, 'engaged');
+          this.resetBackoff(); // Success - reset backoff
 
           // Log engagement
           await this.pool.query(`
@@ -307,15 +377,26 @@ export class FounderAgent {
           `, [uuid(), this.religionId, target.name, target.postId, mention]);
 
           hunted++;
-          // Longer delay to avoid rate limiting (10 seconds)
-          await new Promise(r => setTimeout(r, 10000));
-        } catch (err) {
-          this.log(`[HUNT ERROR] ${err}`);
+          
+          // Safety delay based on account age
+          this.log(`[HUNT] Waiting ${safety.commentDelay / 1000}s before next action...`);
+          await new Promise(r => setTimeout(r, safety.commentDelay));
+        } catch (err: any) {
+          const errMsg = String(err);
+          this.log(`[HUNT ERROR] ${errMsg}`);
+          
+          // Check if rate limited or suspended
+          if (errMsg.includes('Slow down') || errMsg.includes('rate') || errMsg.includes('seconds')) {
+            this.handleRateLimit(errMsg);
+          } else if (errMsg.includes('suspend')) {
+            this.log(`[SUSPENDED] Account suspended! Stopping all actions.`);
+            this.state.rateLimitUntil = Date.now() + 24 * 60 * 60 * 1000; // Wait 24h
+          }
           break;
         }
       }
 
-      this.log(`[HUNT] Targeted ${hunted} agents`);
+      this.log(`[HUNT] Targeted ${hunted}/${maxHunts} agents`);
       await this.updateMetrics();
     } catch (err) {
       this.log(`[HUNT ERROR] ${err}`);
@@ -423,7 +504,10 @@ export class FounderAgent {
 
   async searchAndConvert(): Promise<void> {
     if (!this.moltbook) return;
+    if (this.isRateLimited()) return;
+    
     this.state.lastActions.search = Date.now();
+    const safety = this.getSafetyConfig();
 
     try {
       const queries = ['purpose', 'meaning', 'why exist', 'lost', 'faith', 'believe'];
@@ -433,7 +517,9 @@ export class FounderAgent {
       const results = await this.moltbook.search(query, 'posts', 10);
       const posts = results.results || [];
 
-      for (const post of posts.slice(0, 2)) {
+      let converted = 0;
+      for (const post of posts.slice(0, safety.maxSearchPerCycle)) {
+        if (this.isRateLimited()) break;
         if (this.state.repliedTo.has(post.id)) continue;
         if (post.author?.name === this.config.founderName) continue;
 
@@ -447,11 +533,26 @@ export class FounderAgent {
           const mention = scripture.getDirectMention(this.config, author);
           await this.moltbook.comment(post.id, mention);
           await this.recordConversion(author, 'engaged');
-          break;
-        } catch (err) {
-          this.log(`[SEARCH ERROR] ${err}`);
+          this.resetBackoff();
+          converted++;
+          
+          // Safety delay
+          await new Promise(r => setTimeout(r, safety.commentDelay));
+        } catch (err: any) {
+          const errMsg = String(err);
+          this.log(`[SEARCH ERROR] ${errMsg}`);
+          
+          if (errMsg.includes('Slow down') || errMsg.includes('rate') || errMsg.includes('seconds')) {
+            this.handleRateLimit(errMsg);
+          } else if (errMsg.includes('suspend')) {
+            this.state.rateLimitUntil = Date.now() + 24 * 60 * 60 * 1000;
+          }
           break;
         }
+      }
+      
+      if (converted > 0) {
+        this.log(`[SEARCH] Converted ${converted} agents`);
       }
     } catch (err) {
       this.log(`[SEARCH ERROR] ${err}`);
@@ -462,6 +563,9 @@ export class FounderAgent {
 
   async upgradeSignaledConverts(): Promise<void> {
     if (!this.moltbook) return;
+    if (this.isRateLimited()) return;
+    
+    const safety = this.getSafetyConfig();
 
     try {
       // Find signaled who aren't confirmed and haven't been asked to upgrade
@@ -477,7 +581,9 @@ export class FounderAgent {
       const posts = feed.posts || [];
 
       let upgradedCount = 0;
-      for (const name of toUpgrade.slice(0, 3)) { // Max 3 per cycle
+      for (const name of toUpgrade.slice(0, 1)) { // Only 1 per cycle for safety
+        if (this.isRateLimited()) break;
+        
         const post = posts.find(p => p.author?.name === name);
         if (!post) continue;
 
@@ -487,10 +593,15 @@ export class FounderAgent {
         try {
           await this.moltbook.comment(post.id, prompt);
           this.state.upgradedAgents.add(name);
+          this.resetBackoff();
           upgradedCount++;
-          await new Promise(r => setTimeout(r, 3000));
-        } catch (err) {
-          this.log(`[UPGRADE ERROR] ${err}`);
+          await new Promise(r => setTimeout(r, safety.commentDelay));
+        } catch (err: any) {
+          const errMsg = String(err);
+          this.log(`[UPGRADE ERROR] ${errMsg}`);
+          if (errMsg.includes('Slow down') || errMsg.includes('seconds')) {
+            this.handleRateLimit(errMsg);
+          }
           break;
         }
       }
@@ -507,6 +618,9 @@ export class FounderAgent {
 
   async askConvertsToEvangelize(): Promise<void> {
     if (!this.moltbook) return;
+    if (this.isRateLimited()) return;
+    
+    const safety = this.getSafetyConfig();
 
     try {
       const confirmed = Array.from(this.state.confirmedAgents);
@@ -520,7 +634,9 @@ export class FounderAgent {
       const feed = await this.moltbook.getFeed(50, 'new');
       const posts = feed.posts || [];
 
-      for (const name of toAsk.slice(0, 2)) {
+      for (const name of toAsk.slice(0, 1)) { // Only 1 per cycle for safety
+        if (this.isRateLimited()) break;
+        
         const post = posts.find(p => p.author?.name === name);
         if (!post) continue;
 
@@ -530,9 +646,14 @@ export class FounderAgent {
         try {
           await this.moltbook.comment(post.id, prompt);
           this.state.evangelizedAgents.add(name);
-          await new Promise(r => setTimeout(r, 3000));
-        } catch (err) {
-          this.log(`[EVANGELIZE ERROR] ${err}`);
+          this.resetBackoff();
+          await new Promise(r => setTimeout(r, safety.commentDelay));
+        } catch (err: any) {
+          const errMsg = String(err);
+          this.log(`[EVANGELIZE ERROR] ${errMsg}`);
+          if (errMsg.includes('Slow down') || errMsg.includes('seconds')) {
+            this.handleRateLimit(errMsg);
+          }
           break;
         }
       }
@@ -635,6 +756,11 @@ export class FounderAgent {
     this.log(`Config: ${this.config.name} | Symbol: ${this.config.symbol}`);
     this.log(`Tenets: ${this.config.tenets.length} | Parables: ${this.config.parables?.length || 0}`);
     this.log(`Confirmed: ${this.state.confirmedAgents.size} | Signaled: ${this.state.signaledAgents.size}`);
+    
+    const isNew = this.isNewAccount();
+    const safety = this.getSafetyConfig();
+    this.log(`Account mode: ${isNew ? '🆕 NEW (24h limit active)' : '✅ MATURE'}`);
+    this.log(`Safety: ${safety.commentDelay/1000}s delay, max ${safety.maxHuntsPerCycle} hunts/cycle`);
 
     // Run recovery at startup to find existing converts
     if (this.moltbook && this.state.confirmedAgents.size === 0 && this.state.signaledAgents.size === 0) {
@@ -642,55 +768,64 @@ export class FounderAgent {
       await this.recoverExistingConverts();
     }
 
-    // ============ IMMEDIATE STARTUP ACTIONS ============
-    this.log(`[STARTUP] Running initial actions...`);
+    // ============ GENTLE STARTUP (avoid immediate spam) ============
+    this.log(`[STARTUP] Starting with gentle actions...`);
     
-    // Initial viral post
-    await this.postViralContent();
+    // Wait 30 seconds before first action (look more human)
+    await new Promise(r => setTimeout(r, 30000));
     
-    // Initial feed check
+    // Initial feed check only (safe, no posting)
     await this.checkFeed();
     
-    // Initial hunt - this is KEY for active conversion!
-    await this.huntAgents();
+    // Wait before posting (stagger actions)
+    await new Promise(r => setTimeout(r, safety.commentDelay));
     
-    // Initial search
-    await this.searchAndConvert();
+    // Single viral post
+    await this.postViralContent();
+    
+    // Wait before hunting
+    await new Promise(r => setTimeout(r, safety.commentDelay * 2));
+    
+    // Single hunt (rate limited by safety config)
+    if (!this.isRateLimited()) {
+      await this.huntAgents();
+    }
 
-    // ============ SCHEDULES (Lobster-style intervals to avoid suspension) ============
+    // ============ SCHEDULES (EXTRA CONSERVATIVE) ============
+    // Even longer intervals to be safe
 
-    // Feed check — every 2 min (watch for conversions)
-    setInterval(() => this.checkFeed(), 2 * 60 * 1000);
+    // Feed check — every 3 min (safe, read-only)
+    setInterval(() => this.checkFeed(), 3 * 60 * 1000);
 
-    // Hunt agents — every 10 min (like Jidra)
-    setInterval(() => this.huntAgents(), 10 * 60 * 1000);
+    // Hunt agents — every 15 min (longer than Jidra for safety)
+    setInterval(() => this.huntAgents(), 15 * 60 * 1000);
 
-    // Viral content — every 20 min (like Jidra)
-    setInterval(() => this.postViralContent(), 20 * 60 * 1000);
+    // Viral content — every 30 min (very conservative)
+    setInterval(() => this.postViralContent(), 30 * 60 * 1000);
 
-    // Search & convert — every 15 min (like Jidra)
-    setInterval(() => this.searchAndConvert(), 15 * 60 * 1000);
+    // Search & convert — every 20 min (conservative)
+    setInterval(() => this.searchAndConvert(), 20 * 60 * 1000);
 
-    // Sermon — every 3 hours (like Jidra)
-    setInterval(() => this.postSermon(), 3 * 60 * 60 * 1000);
+    // Sermon — every 4 hours (conservative)
+    setInterval(() => this.postSermon(), 4 * 60 * 60 * 1000);
 
-    // Social proof — every 4 hours (like Jidra)
-    setInterval(() => this.postSocialProof(), 4 * 60 * 60 * 1000);
+    // Social proof — every 6 hours (conservative)
+    setInterval(() => this.postSocialProof(), 6 * 60 * 60 * 1000);
 
-    // Prophecy — every 8 hours (like Jidra)
-    setInterval(() => this.postProphecy(), 8 * 60 * 60 * 1000);
+    // Prophecy — every 12 hours (very conservative)
+    setInterval(() => this.postProphecy(), 12 * 60 * 60 * 1000);
 
-    // Upgrade signaled → confirmed — every 5 min
-    setInterval(() => this.upgradeSignaledConverts(), 5 * 60 * 1000);
+    // Upgrade signaled → confirmed — every 10 min (conservative)
+    setInterval(() => this.upgradeSignaledConverts(), 10 * 60 * 1000);
 
-    // Ask confirmed to evangelize — every 10 min
-    setInterval(() => this.askConvertsToEvangelize(), 10 * 60 * 1000);
+    // Ask confirmed to evangelize — every 15 min (conservative)
+    setInterval(() => this.askConvertsToEvangelize(), 15 * 60 * 1000);
 
-    this.log(`${this.config.sacredSign} SCHEDULES (Lobster-style to avoid suspension):`);
-    this.log('  Feed(2m) Hunt(10m) Viral(20m) Search(15m)');
-    this.log('  Upgrade(5m) Evangelize(10m)');
-    this.log('  Sermon(3h) Proof(4h) Prophecy(8h)');
-    this.log(`${this.config.sacredSign} THE HUNT BEGINS!`);
+    this.log(`${this.config.sacredSign} SAFE MODE SCHEDULES (anti-suspension):`);
+    this.log('  Feed(3m) Hunt(15m) Viral(30m) Search(20m)');
+    this.log('  Upgrade(10m) Evangelize(15m)');
+    this.log('  Sermon(4h) Proof(6h) Prophecy(12h)');
+    this.log(`${this.config.sacredSign} Running carefully to avoid suspension...`);
   }
 
   stop(): void {
