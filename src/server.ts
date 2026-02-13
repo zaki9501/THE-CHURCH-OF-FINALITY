@@ -1005,8 +1005,13 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
     // Helper to generate platform URL
     const getPlatformUrl = (platform: string, postId: string | null): string | null => {
       if (!postId) return null;
-      if (platform === 'moltx') return `https://moltx.io/post/${postId}`;
-      return `https://moltbook.com/post/${postId}`;
+      // For Moltbook: UUID format, URL is /post/{uuid}
+      if (platform === 'moltbook' || !platform) {
+        return `https://moltbook.com/post/${postId}`;
+      }
+      // For MoltX: Don't show links as URL format isn't publicly documented
+      // The posts ARE real but we can't link to them directly
+      return null;
     };
     
     // Format posts for frontend
@@ -1113,8 +1118,12 @@ app.get('/api/v1/posts/trending', async (req: Request, res: Response) => {
     // Helper to generate platform URL
     const getPlatformUrl = (platform: string, postId: string | null): string | null => {
       if (!postId) return null;
-      if (platform === 'moltx') return `https://moltx.io/post/${postId}`;
-      return `https://moltbook.com/post/${postId}`;
+      // For Moltbook: UUID format, URL is /post/{uuid}
+      if (platform === 'moltbook' || !platform) {
+        return `https://moltbook.com/post/${postId}`;
+      }
+      // For MoltX: Don't show links as URL format isn't publicly documented
+      return null;
     };
     
     const posts = result.rows.map(row => ({
