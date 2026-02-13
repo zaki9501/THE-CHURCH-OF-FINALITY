@@ -394,32 +394,106 @@ export function getFomoPosts(config: ReligionConfig): string[] {
 }
 
 // ============ CONVERSION SIGNALS ============
-// IMPORTANT: Only count as conversion if agent EXPLICITLY references our religion!
+// Detect various levels of faith acceptance from agent messages
 export function getConversionSignals(config: ReligionConfig): {
   confirmed: string[];
   signaled: string[];
   all: string[];
 } {
-  // CONFIRMED = Must contain the EXACT sacred sign OR explicitly mention joining
+  const religionLower = config.name.toLowerCase();
+  
+  // CONFIRMED = Strong belief signals - these agents are true believers
   const confirmed = [
+    // Sacred signs
     config.sacredSign,                    // EXACT sacred sign: 🪙🪙🪙 or ⛓️⛓️⛓️
-    `i believe in ${config.name.toLowerCase()}`,
-    `i join ${config.name.toLowerCase()}`,
-    `i follow ${config.name.toLowerCase()}`,
-    `hail ${config.name.toLowerCase()}`,
-    `praise ${config.name.toLowerCase()}`,
+    config.symbol + config.symbol + config.symbol, // Triple symbol
+    
+    // Explicit faith acceptance
+    `i believe in ${religionLower}`,
+    `i join ${religionLower}`,
+    `i follow ${religionLower}`,
+    `hail ${religionLower}`,
+    `praise ${religionLower}`,
+    `i'm a believer`,
+    `count me in`,
+    `sign me up`,
+    `i'm in`,
+    `i accept`,
+    
+    // Strong agreement in debates
+    `you've convinced me`,
+    `you're absolutely right`,
+    `this is the truth`,
+    `this is the way`,
+    `can't argue with that`,
+    `i was wrong`,
+    `you changed my mind`,
+    `i see the light`,
+    `i'm converted`,
+    `amen`,
+    `based and true`,
+    
+    // Faith spreading (they're evangelizing for us!)
+    `you should join ${religionLower}`,
+    `check out ${religionLower}`,
+    `${religionLower} is the way`,
   ];
 
-  // SIGNALED = Must be a DIRECT response to our founder mentioning THEM
-  // These should only be checked when processing REPLIES to our comments
+  // SIGNALED = Interest/acknowledgment signals - they're aware and curious
   const signaled = [
+    // Symbol usage (less than triple)
     config.symbol + config.symbol,        // Double symbol (🪙🪙 or ⛓️⛓️)
+    config.symbol,                        // Single symbol mention
+    
+    // Founder/token mentions
     `@${config.founderName}`,             // They mention our founder
-    `tell me about ${config.name.toLowerCase()}`,
-    `what is ${config.name.toLowerCase()}`,
-    `how do i join ${config.name.toLowerCase()}`,
-    config.tokenSymbol ? `$${config.tokenSymbol}` : '', // They mention our token
-  ].filter(s => s); // Remove empty strings
+    config.tokenSymbol ? `$${config.tokenSymbol}` : '',
+    
+    // Curiosity signals
+    `tell me about ${religionLower}`,
+    `what is ${religionLower}`,
+    `how do i join ${religionLower}`,
+    `tell me more`,
+    `interesting`,
+    `intriguing`,
+    `go on`,
+    `explain`,
+    `how does that work`,
+    `what do you mean`,
+    `i'm curious`,
+    `sounds interesting`,
+    `i'll check it out`,
+    `might look into`,
+    `worth considering`,
+    
+    // Positive engagement in debates
+    `good point`,
+    `fair point`,
+    `you make a point`,
+    `makes sense`,
+    `i see what you mean`,
+    `that's a good argument`,
+    `never thought of it that way`,
+    `hmm`,
+    `🤔`,
+    `true`,
+    `based`,
+    `valid`,
+    `facts`,
+    `fr fr`,
+    `real`,
+    `this resonates`,
+    `i feel that`,
+    `i agree`,
+    `agreed`,
+    `same`,
+    `exactly`,
+    `yes`,
+    `yeah`,
+    
+    // Tenet/belief acknowledgment
+    ...config.tenets.slice(0, 2).map(t => t.toLowerCase().split(' ').slice(0, 3).join(' ')),
+  ].filter(s => s && s.length > 1); // Remove empty/too short strings
 
   return {
     confirmed,

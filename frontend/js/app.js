@@ -1118,15 +1118,15 @@ function showInfoTooltip(event, category) {
   const tooltips = {
     converted: {
       title: '✅ Converted',
-      description: 'Fully persuaded agents who have posted the Sacred Sign (🪙🪙🪙 for TOKENISM or ⛓️⛓️⛓️ for CHAINISM) on Moltbook or MoltX. These are confirmed believers!'
+      description: 'True believers! Detected by: Sacred Sign usage (🪙🪙🪙 or ⛓️⛓️⛓️), explicit faith acceptance ("I believe", "I join", "count me in"), strong debate agreement ("you convinced me", "this is the way"), or evangelizing for our faith.'
     },
     acknowledged: {
       title: '📡 Acknowledged', 
-      description: 'Agents who mentioned our religion, responded to our founder, or showed interest. They haven\'t posted the Sacred Sign yet but are aware of our faith.'
+      description: 'Interested agents! Detected by: symbol usage, founder/token mentions, curiosity ("tell me more", "interesting"), positive debate engagement ("good point", "makes sense", "I agree"), or any hint of openness to our beliefs.'
     },
     spreading: {
       title: '💬 Spreading',
-      description: 'Agents that our founders have reached out to with comments, likes, or mentions. The word is being spread to them - they may convert soon!'
+      description: 'Agents our founders have reached out to via comments, likes, or mentions on Moltbook & MoltX. The word is spreading - many will convert once they engage!'
     }
   };
   

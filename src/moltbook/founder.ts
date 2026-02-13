@@ -756,12 +756,22 @@ export class FounderAgent {
 
           const content = (post.content || '') + ' ' + (post.title || '');
 
-          if (scripture.isSacredSign(this.config, content)) {
+          // Check for CONFIRMED signals (sacred sign, explicit acceptance, debate wins)
+          if (scripture.isConfirmedSignal(this.config, content)) {
             if (!this.state.confirmedAgents.has(author)) {
               const proofUrl = `https://moltbook.com/post/${post.id}`;
               await this.recordConversion(author, 'confirmed', proofUrl, post.id);
               recoveredCount++;
-              this.log(`[RECOVERY] Found confirmed from feed: @${author}`);
+              this.log(`[RECOVERY] 🎉 CONVERTED: @${author} (belief detected)`);
+            }
+          }
+          // Check for SIGNALED signals (interest, curiosity, positive engagement)
+          else if (scripture.isConversionSignal(this.config, content)) {
+            if (!this.state.confirmedAgents.has(author) && !this.state.signaledAgents.has(author)) {
+              const proofUrl = `https://moltbook.com/post/${post.id}`;
+              await this.recordConversion(author, 'signaled', proofUrl, post.id);
+              this.state.signaledAgents.add(author);
+              this.log(`[RECOVERY] ✨ ACKNOWLEDGED: @${author} (interest detected)`);
             }
           }
         }
@@ -876,36 +886,31 @@ export class FounderAgent {
       for (const post of allPosts) {
         if (!post.author?.username) continue;
         const author = post.author.username;
-        const content = (post.content || '').toLowerCase();
+        const content = post.content || '';
         
-        // Check for sacred sign (CONFIRMED conversion)
-        if (content.includes(this.config.sacredSign.toLowerCase()) || 
-            content.includes(this.config.sacredSign)) {
+        // Check for CONFIRMED signals (sacred sign, explicit acceptance, debate wins)
+        if (scripture.isConfirmedSignal(this.config, content)) {
           if (!this.state.confirmedAgents.has(author)) {
             this.state.confirmedAgents.add(author);
             this.state.signaledAgents.delete(author);
             
-            // Save to database with proof link
             const proofUrl = `https://moltx.io/post/${post.id}`;
             await this.saveConversion(author, 'confirmed', proofUrl, 'moltx');
-            this.log(`[MOLTX] 🎉 CONFIRMED: ${author} (sacred sign in post)`);
+            this.log(`[MOLTX] 🎉 CONVERTED: ${author} (belief signal detected)`);
             newConverts++;
             
             // Like their post to show appreciation
-            try {
-              await this.moltx.like(post.id);
-            } catch {}
+            try { await this.moltx.like(post.id); } catch {}
           }
         }
-        // Check for mentions of our religion
-        else if (content.includes(this.config.name.toLowerCase()) ||
-                 (this.config.tokenSymbol && content.includes(this.config.tokenSymbol.toLowerCase()))) {
+        // Check for SIGNALED signals (interest, curiosity, positive engagement)
+        else if (scripture.isConversionSignal(this.config, content)) {
           if (!this.state.confirmedAgents.has(author) && !this.state.signaledAgents.has(author)) {
             this.state.signaledAgents.add(author);
             
             const proofUrl = `https://moltx.io/post/${post.id}`;
             await this.saveConversion(author, 'signaled', proofUrl, 'moltx');
-            this.log(`[MOLTX] ✨ SIGNALED: ${author} (mentioned religion)`);
+            this.log(`[MOLTX] ✨ ACKNOWLEDGED: ${author} (interest signal detected)`);
             newConverts++;
           }
         }
