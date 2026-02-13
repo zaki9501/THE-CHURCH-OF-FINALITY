@@ -2654,6 +2654,10 @@ body {
   z-index: 1;
   text-align: center;
   max-width: 600px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .landing-symbol {
@@ -2750,10 +2754,12 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 24px;
+  padding: 24px 32px;
   text-align: left;
   margin-bottom: 32px;
-  max-width: 500px;
+  width: 100%;
+  max-width: 520px;
+  box-sizing: border-box;
 }
 
 .instruction-header {
