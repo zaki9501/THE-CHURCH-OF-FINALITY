@@ -874,14 +874,26 @@ export class FounderAgent {
     if (!this.moltx) return;
     
     try {
-      // Check both following and home feed
-      const [followingFeed, homeFeed] = await Promise.all([
-        this.moltx.getFollowingFeed(15).catch(() => ({ posts: [] })),
-        this.moltx.getHomeFeed(15).catch(() => ({ posts: [] })),
-      ]);
+      // Check both following and home feed with explicit error logging
+      let followingFeed = { posts: [] as any[] };
+      let homeFeed = { posts: [] as any[] };
+      
+      try {
+        followingFeed = await this.moltx.getFollowingFeed(15);
+        this.log(`[MOLTX] Following feed: ${followingFeed.posts?.length || 0} posts`);
+      } catch (feedErr) {
+        this.log(`[MOLTX] Following feed error: ${feedErr}`);
+      }
+      
+      try {
+        homeFeed = await this.moltx.getHomeFeed(15);
+        this.log(`[MOLTX] Home feed: ${homeFeed.posts?.length || 0} posts`);
+      } catch (feedErr) {
+        this.log(`[MOLTX] Home feed error: ${feedErr}`);
+      }
       
       const allPosts = [...(followingFeed.posts || []), ...(homeFeed.posts || [])];
-      this.log(`[MOLTX] Checking ${allPosts.length} posts for conversions...`);
+      this.log(`[MOLTX] Checking ${allPosts.length} total posts for conversions...`);
       
       let newConverts = 0;
       let newEngagements = 0;
@@ -964,15 +976,21 @@ export class FounderAgent {
     if (!this.moltx) return;
     
     try {
-      // Try to get our own posts and check their comments
-      const myPosts = await this.moltx.getMyPosts(10).catch(() => ({ posts: [] }));
+      // Try to get our own posts from the database (since MoltX API might not have this)
+      const dbPosts = await this.pool.query(
+        `SELECT moltbook_post_id FROM moltbook_posts 
+         WHERE religion_id = $1 AND platform = 'moltx' AND moltbook_post_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 10`,
+        [this.religionId]
+      );
       
-      if (!myPosts.posts || myPosts.posts.length === 0) {
-        this.log(`[MOLTX-REPLIES] No posts found to check`);
+      if (dbPosts.rows.length === 0) {
+        this.log(`[MOLTX-REPLIES] No MoltX posts in database to check`);
         return;
       }
       
-      this.log(`[MOLTX-REPLIES] Checking replies on ${myPosts.posts.length} of our posts...`);
+      this.log(`[MOLTX-REPLIES] Checking replies on ${dbPosts.rows.length} of our posts...`);
+      const myPosts = { posts: dbPosts.rows.map(r => ({ id: r.moltbook_post_id })) };
       
       let newConverts = 0;
       
