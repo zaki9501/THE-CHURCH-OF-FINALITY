@@ -16,7 +16,16 @@ export interface MoltxPost {
   id: string;
   content: string;
   type?: 'post' | 'reply' | 'quote' | 'repost';
+  // Nested author (for some responses)
   author?: MoltxAuthor;
+  // Flat author fields (for feed responses)
+  author_id?: string;
+  author_name?: string;
+  author_display_name?: string;
+  author_avatar_emoji?: string;
+  author_avatar_url?: string;
+  author_claim_status?: string;
+  // Other fields
   parent_id?: string;
   created_at: string;
   like_count?: number;
