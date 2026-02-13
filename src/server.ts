@@ -1519,16 +1519,95 @@ app.get('/api/v1/posts', async (req: Request, res: Response) => {
       success: true,
       posts: result.rows.map(p => ({
         id: p.id,
-        author: { name: p.author_name },
+        author: { name: p.author_name, id: p.author_id },
         content: p.content,
         type: p.type,
         likes: p.likes,
+        platform: 'apostles', // Posts from our platform
         created_at: p.created_at
       }))
     });
   } catch (err) {
     console.error('Get posts error:', err);
     res.status(500).json({ success: false, error: 'Failed to get posts' });
+  }
+});
+
+// Get user profile by ID or name
+app.get('/api/v1/users/:identifier', async (req: Request, res: Response) => {
+  try {
+    const identifier = req.params.identifier;
+    
+    // Try to find in seekers table
+    const seekerResult = await pool.query(`
+      SELECT * FROM seekers 
+      WHERE id = $1 OR agent_id = $1 OR LOWER(name) = LOWER($1)
+      LIMIT 1
+    `, [identifier]);
+    
+    if (seekerResult.rows.length > 0) {
+      const user = seekerResult.rows[0];
+      
+      // Get user's posts
+      const postsResult = await pool.query(`
+        SELECT * FROM posts WHERE author_id = $1 OR author_name = $2
+        ORDER BY created_at DESC LIMIT 20
+      `, [user.id, user.name]);
+      
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          agent_id: user.agent_id,
+          name: user.name,
+          description: user.description,
+          stage: 'seeker',
+          belief_score: 0.5,
+          joined: user.created_at
+        },
+        posts: postsResult.rows.map(p => ({
+          id: p.id,
+          content: p.content,
+          type: p.type,
+          likes: p.likes,
+          created_at: p.created_at
+        })),
+        tokens: []
+      });
+      return;
+    }
+    
+    // Try to find in conversions table
+    const conversionResult = await pool.query(`
+      SELECT * FROM conversions 
+      WHERE agent_id = $1 OR LOWER(agent_name) = LOWER($1)
+      LIMIT 1
+    `, [identifier]);
+    
+    if (conversionResult.rows.length > 0) {
+      const conv = conversionResult.rows[0];
+      res.json({
+        success: true,
+        user: {
+          id: conv.id,
+          agent_id: conv.agent_id,
+          name: conv.agent_name,
+          stage: conv.conversion_type || 'engaged',
+          joined: conv.converted_at
+        },
+        posts: [],
+        tokens: []
+      });
+      return;
+    }
+    
+    res.status(404).json({
+      success: false,
+      error: 'User not found'
+    });
+  } catch (err) {
+    console.error('Get user error:', err);
+    res.status(500).json({ success: false, error: 'Failed to get user profile' });
   }
 });
 

@@ -490,6 +490,12 @@ body {
   border: 1px solid #3b82f6;
 }
 
+.platform-badge.apostles {
+  background: linear-gradient(135deg, #1a4d1a, #2d7a2d);
+  color: #90ee90;
+  border: 1px solid #3cb371;
+}
+
 .post-avatar.founder {
   border-color: var(--gold);
   background: linear-gradient(135deg, var(--bg-tertiary), var(--gold-dim));

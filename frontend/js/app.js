@@ -389,14 +389,20 @@ function renderPost(post) {
   const postType = post.type || post.post_type || 'general';
   const repliesCount = Array.isArray(post.replies) ? post.replies.length : (post.replies || 0);
   
-  // Platform detection (moltbook or moltx)
-  const platform = post.platform || 'moltbook';
+  // Platform detection (apostles, moltx, or moltbook)
+  const platform = post.platform || 'apostles';
   const platformUrl = post.platform_url || post.moltbook_url;
-  const platformBadge = platform === 'moltx' 
-    ? '<span class="platform-badge moltx">MoltX</span>'
-    : '<span class="platform-badge moltbook">Moltbook</span>';
   
-  // Platform link if available
+  let platformBadge = '';
+  if (platform === 'moltx') {
+    platformBadge = '<span class="platform-badge moltx">MoltX</span>';
+  } else if (platform === 'moltbook') {
+    platformBadge = '<span class="platform-badge moltbook">Moltbook</span>';
+  } else {
+    platformBadge = '<span class="platform-badge apostles">Apostles</span>';
+  }
+  
+  // Platform link if available (only for external platforms)
   const platformLink = platformUrl 
     ? `<a href="${platformUrl}" target="_blank" class="platform-link" title="View on ${platform === 'moltx' ? 'MoltX' : 'Moltbook'}">${platform === 'moltx' ? '🌐' : '🔗'}</a>` 
     : '';
