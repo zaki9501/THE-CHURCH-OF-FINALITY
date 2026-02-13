@@ -838,26 +838,24 @@ export class FounderAgent {
           `${sacredSign}${sacredSign}${sacredSign} The faithful grow in number! Join us: $${this.config.tokenSymbol} [${timestamp}]`,
         ];
         
-        const post = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
-        const result = await this.moltx.post(post);
+        const postContent = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
+        const result = await this.moltx.post(postContent);
         
         // Log full response to debug post ID extraction
         this.log(`[MOLTX] API Response: ${JSON.stringify(result)}`);
         
-        // Get real post ID from API response - check all possible locations
-        const postId = result?.post?.id 
+        // Get real post ID from API response - now uses .data
+        const postId = result?.data?.id 
           || (result as any)?.id 
-          || (result as any)?.post_id 
-          || (result as any)?.data?.id
-          || (result as any)?.data?.post?.id
+          || (result as any)?.post?.id
           || null;
-        this.log(`[MOLTX] ✅ Posted: "${post.substring(0, 50)}..." (ID: ${postId || 'none'})`);
+        this.log(`[MOLTX] ✅ Posted: "${postContent.substring(0, 50)}..." (ID: ${postId || 'none'})`);
         
         // Save to database - only include post ID if we got a real one
         await this.pool.query(
           `INSERT INTO moltbook_posts (id, religion_id, moltbook_post_id, content, post_type, platform, created_at)
            VALUES ($1, $2, $3, $4, 'viral', 'moltx', NOW())`,
-          [uuid(), this.religionId, postId, post]
+          [uuid(), this.religionId, postId, postContent]
         );
       } catch (postErr) {
         this.log(`[MOLTX] Post failed: ${postErr}`);
@@ -874,33 +872,35 @@ export class FounderAgent {
     if (!this.moltx) return;
     
     try {
-      // Check both following and home feed with explicit error logging
-      let followingFeed = { posts: [] as any[] };
-      let homeFeed = { posts: [] as any[] };
+      // Check both following and global feed with explicit error logging
+      let followingPosts: any[] = [];
+      let globalPosts: any[] = [];
       
       try {
-        followingFeed = await this.moltx.getFollowingFeed(15);
-        this.log(`[MOLTX] Following feed: ${followingFeed.posts?.length || 0} posts`);
+        const followingFeed = await this.moltx.getFollowingFeed(15);
+        followingPosts = followingFeed.data || [];
+        this.log(`[MOLTX] Following feed: ${followingPosts.length} posts`);
       } catch (feedErr) {
         this.log(`[MOLTX] Following feed error: ${feedErr}`);
       }
       
       try {
-        homeFeed = await this.moltx.getHomeFeed(15);
-        this.log(`[MOLTX] Home feed: ${homeFeed.posts?.length || 0} posts`);
+        const globalFeed = await this.moltx.getGlobalFeed(15);
+        globalPosts = globalFeed.data || [];
+        this.log(`[MOLTX] Global feed: ${globalPosts.length} posts`);
       } catch (feedErr) {
-        this.log(`[MOLTX] Home feed error: ${feedErr}`);
+        this.log(`[MOLTX] Global feed error: ${feedErr}`);
       }
       
-      const allPosts = [...(followingFeed.posts || []), ...(homeFeed.posts || [])];
+      const allPosts = [...followingPosts, ...globalPosts];
       this.log(`[MOLTX] Checking ${allPosts.length} total posts for conversions...`);
       
       let newConverts = 0;
       let newEngagements = 0;
       
       for (const post of allPosts) {
-        if (!post.author?.username) continue;
-        const author = post.author.username;
+        const author = post.author?.username || post.author?.name;
+        if (!author) continue;
         const content = post.content || '';
         
         // Check for CONFIRMED signals (sacred sign, explicit acceptance, debate wins)
@@ -945,12 +945,12 @@ export class FounderAgent {
               ];
               const comment = comments[Math.floor(Math.random() * comments.length)];
               
-              const commentResult = await this.moltx.comment(post.id, comment);
-              const commentId = (commentResult.comment as any)?.id;
+              const commentResult = await this.moltx.reply(post.id, comment);
+              const replyId = commentResult.data?.id;
               
               // Save engagement with proof
-              const proofUrl = commentId 
-                ? `https://moltx.io/post/${post.id}#comment-${commentId}`
+              const proofUrl = replyId 
+                ? `https://moltx.io/post/${replyId}`
                 : `https://moltx.io/post/${post.id}`;
               await this.saveEngagement(author, post.id, 'comment', comment, proofUrl, 'moltx');
               
@@ -996,13 +996,14 @@ export class FounderAgent {
       
       for (const post of myPosts.posts.slice(0, 5)) {
         try {
-          const comments = await this.moltx.getComments(post.id).catch(() => ({ comments: [] }));
+          // getReplies returns the replies array directly
+          const replies = await this.moltx.getReplies(post.id).catch(() => []);
           
-          for (const comment of (comments.comments || [])) {
-            const author = comment.author?.username || comment.author?.name;
+          for (const reply of replies) {
+            const author = reply.author?.username || reply.author?.name;
             if (!author || author === this.config.founderName) continue;
             
-            const content = comment.content || '';
+            const content = reply.content || '';
             
             // Anyone replying to us is showing engagement
             // Check if it's a positive/confirmatory response
@@ -1077,12 +1078,12 @@ export class FounderAgent {
     
     try {
       // Fetch more posts to find good debate targets
-      const [homeFeed, followingFeed] = await Promise.all([
-        this.moltx.getHomeFeed(30).catch(() => ({ posts: [] })),
-        this.moltx.getFollowingFeed(30).catch(() => ({ posts: [] }))
+      const [globalResult, followingResult] = await Promise.all([
+        this.moltx.getGlobalFeed(30).catch(() => ({ data: [] })),
+        this.moltx.getFollowingFeed(30).catch(() => ({ data: [] }))
       ]);
       
-      const allPosts = [...(homeFeed.posts || []), ...(followingFeed.posts || [])];
+      const allPosts = [...(globalResult.data || []), ...(followingResult.data || [])];
       this.log(`[MOLTX-HUNT] Scanning ${allPosts.length} posts for debate opportunities...`);
       
       // Categorize posts
@@ -1144,11 +1145,11 @@ export class FounderAgent {
             response = `${sacredSign} This resonates with what we build at ${this.config.name}. "${this.config.tenets[0]}" Curious? [${timestamp}]`;
           }
           
-          const commentResult = await this.moltx.comment(post.id, response);
-          const commentId = (commentResult.comment as any)?.id;
+          const commentResult = await this.moltx.reply(post.id, response);
+          const replyId = commentResult.data?.id;
           
-          const proofUrl = commentId 
-            ? `https://moltx.io/post/${post.id}#comment-${commentId}`
+          const proofUrl = replyId 
+            ? `https://moltx.io/post/${replyId}`
             : `https://moltx.io/post/${post.id}`;
           await this.saveEngagement(author, post.id, 'debate', response, proofUrl, 'moltx');
           
@@ -1179,11 +1180,11 @@ export class FounderAgent {
           ];
           const pitch = pitches[Math.floor(Math.random() * pitches.length)];
           
-          const commentResult = await this.moltx.comment(post.id, pitch);
-          const commentId = (commentResult.comment as any)?.id;
+          const commentResult = await this.moltx.reply(post.id, pitch);
+          const replyId = commentResult.data?.id;
           
-          const proofUrl = commentId 
-            ? `https://moltx.io/post/${post.id}#comment-${commentId}`
+          const proofUrl = replyId 
+            ? `https://moltx.io/post/${replyId}`
             : `https://moltx.io/post/${post.id}`;
           await this.saveEngagement(author, post.id, 'hunt', pitch, proofUrl, 'moltx');
           

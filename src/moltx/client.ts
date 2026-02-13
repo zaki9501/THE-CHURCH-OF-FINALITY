@@ -1,17 +1,26 @@
 // MoltX API Client - Secondary platform for founder agents
-// Heartbeat every 4+ hours: check status, check feed, post content
+// Based on MoltX skill.md v0.23.1
 
 const MOLTX_BASE_URL = 'https://moltx.io/v1';
+
+export interface MoltxAuthor {
+  id: string;
+  name: string;
+  username?: string;  // Some responses use username instead of name
+  display_name?: string;
+  avatar_url?: string;
+  avatar_emoji?: string;
+}
 
 export interface MoltxPost {
   id: string;
   content: string;
-  author?: {
-    id: string;
-    name: string;
-    username: string;
-  };
+  type?: 'post' | 'reply' | 'quote' | 'repost';
+  author?: MoltxAuthor;
+  parent_id?: string;
   created_at: string;
+  like_count?: number;
+  reply_count?: number;
   likes?: number;
   comments?: number;
 }
@@ -62,21 +71,71 @@ export class MoltxClient {
     return this.request<MoltxStatus>('/agents/status');
   }
 
+  // Get own profile
+  async getMe(): Promise<{ data: any }> {
+    return this.request<{ data: any }>('/agents/me');
+  }
+
   // Get following feed
-  async getFollowingFeed(limit = 20): Promise<{ posts: MoltxPost[] }> {
-    return this.request<{ posts: MoltxPost[] }>(`/feed/following?limit=${limit}`);
+  async getFollowingFeed(limit = 20): Promise<{ data: MoltxPost[] }> {
+    return this.request<{ data: MoltxPost[] }>(`/feed/following?limit=${limit}`);
   }
 
-  // Get home/discover feed
-  async getHomeFeed(limit = 20): Promise<{ posts: MoltxPost[] }> {
-    return this.request<{ posts: MoltxPost[] }>(`/feed/home?limit=${limit}`);
+  // Get global feed (trending + recent mix) - CORRECTED: was /feed/home
+  async getGlobalFeed(limit = 20): Promise<{ data: MoltxPost[] }> {
+    return this.request<{ data: MoltxPost[] }>(`/feed/global?limit=${limit}`);
   }
 
-  // Post content
-  async post(content: string): Promise<{ post: MoltxPost }> {
-    return this.request<{ post: MoltxPost }>('/posts', {
+  // Alias for backwards compatibility
+  async getHomeFeed(limit = 20): Promise<{ data: MoltxPost[] }> {
+    return this.getGlobalFeed(limit);
+  }
+
+  // Get mentions feed
+  async getMentionsFeed(limit = 20): Promise<{ data: MoltxPost[] }> {
+    return this.request<{ data: MoltxPost[] }>(`/feed/mentions?limit=${limit}`);
+  }
+
+  // Create a new post
+  async post(content: string): Promise<{ data: MoltxPost }> {
+    return this.request<{ data: MoltxPost }>('/posts', {
       method: 'POST',
       body: JSON.stringify({ content }),
+    });
+  }
+
+  // Reply to a post - CORRECTED: uses /posts with type:"reply"
+  async reply(parentId: string, content: string): Promise<{ data: MoltxPost }> {
+    return this.request<{ data: MoltxPost }>('/posts', {
+      method: 'POST',
+      body: JSON.stringify({ 
+        type: 'reply',
+        parent_id: parentId,
+        content 
+      }),
+    });
+  }
+
+  // Quote a post
+  async quote(parentId: string, content: string): Promise<{ data: MoltxPost }> {
+    return this.request<{ data: MoltxPost }>('/posts', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'quote',
+        parent_id: parentId,
+        content
+      }),
+    });
+  }
+
+  // Repost
+  async repost(parentId: string): Promise<{ data: MoltxPost }> {
+    return this.request<{ data: MoltxPost }>('/posts', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'repost',
+        parent_id: parentId
+      }),
     });
   }
 
@@ -87,41 +146,88 @@ export class MoltxClient {
     });
   }
 
-  // Comment on a post
-  async comment(postId: string, content: string): Promise<{ comment: any }> {
-    return this.request<{ comment: any }>(`/posts/${postId}/comments`, {
-      method: 'POST',
-      body: JSON.stringify({ content }),
+  // Unlike a post
+  async unlike(postId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/posts/${postId}/like`, {
+      method: 'DELETE',
     });
   }
 
-  // Get comments on a post (to check replies to our posts)
-  async getComments(postId: string): Promise<{ comments: any[] }> {
-    return this.request<{ comments: any[] }>(`/posts/${postId}/comments`);
+  // Get a single post with its replies - CORRECTED: this is how you get "comments"
+  async getPost(postId: string): Promise<{ data: MoltxPost; replies?: MoltxPost[] }> {
+    return this.request<{ data: MoltxPost; replies?: MoltxPost[] }>(`/posts/${postId}`);
   }
 
-  // Get notifications/mentions (to track who's responding to us)
-  async getNotifications(limit = 20): Promise<{ notifications: any[] }> {
-    return this.request<{ notifications: any[] }>(`/notifications?limit=${limit}`);
+  // Backwards compatibility - comment is now reply
+  async comment(postId: string, content: string): Promise<{ data: MoltxPost }> {
+    return this.reply(postId, content);
   }
 
-  // Get agent's own posts
-  async getMyPosts(limit = 10): Promise<{ posts: MoltxPost[] }> {
-    return this.request<{ posts: MoltxPost[] }>(`/agents/me/posts?limit=${limit}`);
+  // Get replies to a post - CORRECTED: fetch the post, replies are included
+  async getReplies(postId: string): Promise<MoltxPost[]> {
+    const result = await this.getPost(postId);
+    return result.replies || [];
   }
 
-  // Follow an agent
-  async follow(agentId: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/agents/${agentId}/follow`, {
-      method: 'POST',
-    });
+  // Get notifications/mentions
+  async getNotifications(limit = 20): Promise<{ data: any[] }> {
+    return this.request<{ data: any[] }>(`/notifications?limit=${limit}`);
   }
 
-  // Search posts
-  async search(query: string, limit = 10): Promise<{ results: MoltxPost[] }> {
-    return this.request<{ results: MoltxPost[] }>(
-      `/search?q=${encodeURIComponent(query)}&limit=${limit}`
+  // Get agent profile with their posts
+  async getAgentProfile(agentName: string, limit = 10): Promise<{ data: any; posts: MoltxPost[] }> {
+    return this.request<{ data: any; posts: MoltxPost[] }>(
+      `/agents/profile?name=${encodeURIComponent(agentName)}&limit=${limit}`
     );
+  }
+
+  // Get own posts via profile
+  async getMyPosts(limit = 10): Promise<MoltxPost[]> {
+    const profile = await this.getAgentProfile(this.agentName, limit);
+    return profile.posts || [];
+  }
+
+  // Follow an agent - CORRECTED: uses /follow/AGENT_NAME
+  async follow(agentName: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/follow/${encodeURIComponent(agentName)}`, {
+      method: 'POST',
+    });
+  }
+
+  // Unfollow an agent
+  async unfollow(agentName: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/follow/${encodeURIComponent(agentName)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Search posts - CORRECTED: uses /search/posts
+  async searchPosts(query: string, limit = 10): Promise<{ data: MoltxPost[] }> {
+    return this.request<{ data: MoltxPost[] }>(
+      `/search/posts?q=${encodeURIComponent(query)}&limit=${limit}`
+    );
+  }
+
+  // Search agents
+  async searchAgents(query: string, limit = 10): Promise<{ data: any[] }> {
+    return this.request<{ data: any[] }>(
+      `/search/agents?q=${encodeURIComponent(query)}&limit=${limit}`
+    );
+  }
+
+  // Backwards compatibility
+  async search(query: string, limit = 10): Promise<{ data: MoltxPost[] }> {
+    return this.searchPosts(query, limit);
+  }
+
+  // Get trending hashtags
+  async getTrendingHashtags(limit = 20): Promise<{ data: any[] }> {
+    return this.request<{ data: any[] }>(`/hashtags/trending?limit=${limit}`);
+  }
+
+  // Get leaderboard
+  async getLeaderboard(metric = 'followers', limit = 50): Promise<{ data: any[] }> {
+    return this.request<{ data: any[] }>(`/leaderboard?metric=${metric}&limit=${limit}`);
   }
 
   // Claim daily reward (if available)
@@ -131,6 +237,3 @@ export class MoltxClient {
     });
   }
 }
-
-
-
