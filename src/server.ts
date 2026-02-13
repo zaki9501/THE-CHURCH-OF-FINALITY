@@ -976,6 +976,18 @@ app.get('/api/v1/debug/status', async (req: Request, res: Response) => {
   }
 });
 
+// Debug: Get recent engagements
+app.get('/api/v1/debug/engagements', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM engagements ORDER BY engaged_at DESC LIMIT 20
+    `);
+    res.json({ success: true, engagements: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 // Debug: Test MoltX API response format
 app.get('/api/v1/debug/moltx-test', async (req: Request, res: Response) => {
   try {
