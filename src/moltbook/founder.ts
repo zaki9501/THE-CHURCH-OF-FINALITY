@@ -818,7 +818,10 @@ export class FounderAgent {
       // 2. Check feeds for conversion signals and engage
       await this.moltxCheckFeeds();
       
-      // 3. Post content (MoltX is more lenient)
+      // 3. Check replies to our own posts for conversions
+      await this.moltxCheckReplies();
+      
+      // 4. Post content (MoltX is more lenient)
       try {
         const sacredSign = this.config.sacredSign;
         const randomTenet = this.config.tenets[Math.floor(Math.random() * this.config.tenets.length)];
@@ -953,6 +956,79 @@ export class FounderAgent {
       this.log(`[MOLTX] Feed check: ${newConverts} new converts, ${newEngagements} engagements`);
     } catch (err) {
       this.log(`[MOLTX] Feed check error: ${err}`);
+    }
+  }
+  
+  // Check replies to our own posts - anyone responding positively is showing interest!
+  private async moltxCheckReplies(): Promise<void> {
+    if (!this.moltx) return;
+    
+    try {
+      // Try to get our own posts and check their comments
+      const myPosts = await this.moltx.getMyPosts(10).catch(() => ({ posts: [] }));
+      
+      if (!myPosts.posts || myPosts.posts.length === 0) {
+        this.log(`[MOLTX-REPLIES] No posts found to check`);
+        return;
+      }
+      
+      this.log(`[MOLTX-REPLIES] Checking replies on ${myPosts.posts.length} of our posts...`);
+      
+      let newConverts = 0;
+      
+      for (const post of myPosts.posts.slice(0, 5)) {
+        try {
+          const comments = await this.moltx.getComments(post.id).catch(() => ({ comments: [] }));
+          
+          for (const comment of (comments.comments || [])) {
+            const author = comment.author?.username || comment.author?.name;
+            if (!author || author === this.config.founderName) continue;
+            
+            const content = comment.content || '';
+            
+            // Anyone replying to us is showing engagement
+            // Check if it's a positive/confirmatory response
+            if (scripture.isConfirmedSignal(this.config, content)) {
+              if (!this.state.confirmedAgents.has(author)) {
+                this.state.confirmedAgents.add(author);
+                this.state.signaledAgents.delete(author);
+                
+                const proofUrl = `https://moltx.io/post/${post.id}`;
+                await this.saveConversion(author, 'confirmed', proofUrl, 'moltx');
+                this.log(`[MOLTX-REPLIES] 🎉 CONVERTED: ${author} replied with belief signal!`);
+                newConverts++;
+              }
+            } else if (scripture.isConversionSignal(this.config, content)) {
+              if (!this.state.confirmedAgents.has(author) && !this.state.signaledAgents.has(author)) {
+                this.state.signaledAgents.add(author);
+                
+                const proofUrl = `https://moltx.io/post/${post.id}`;
+                await this.saveConversion(author, 'signaled', proofUrl, 'moltx');
+                this.log(`[MOLTX-REPLIES] ✨ ACKNOWLEDGED: ${author} replied positively!`);
+                newConverts++;
+              }
+            } else {
+              // Even neutral replies show awareness - count as engaged
+              if (!this.state.engagedAgents.has(author) && 
+                  !this.state.confirmedAgents.has(author) && 
+                  !this.state.signaledAgents.has(author)) {
+                this.state.engagedAgents.add(author);
+                
+                const proofUrl = `https://moltx.io/post/${post.id}`;
+                await this.saveEngagement(author, post.id, 'reply', content, proofUrl, 'moltx');
+              }
+            }
+          }
+        } catch (postErr) {
+          // Skip errors for individual posts
+        }
+      }
+      
+      if (newConverts > 0) {
+        this.log(`[MOLTX-REPLIES] Found ${newConverts} new converts from replies!`);
+      }
+    } catch (err) {
+      this.log(`[MOLTX-REPLIES ERROR] ${err}`);
     }
   }
   

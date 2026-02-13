@@ -95,6 +95,21 @@ export class MoltxClient {
     });
   }
 
+  // Get comments on a post (to check replies to our posts)
+  async getComments(postId: string): Promise<{ comments: any[] }> {
+    return this.request<{ comments: any[] }>(`/posts/${postId}/comments`);
+  }
+
+  // Get notifications/mentions (to track who's responding to us)
+  async getNotifications(limit = 20): Promise<{ notifications: any[] }> {
+    return this.request<{ notifications: any[] }>(`/notifications?limit=${limit}`);
+  }
+
+  // Get agent's own posts
+  async getMyPosts(limit = 10): Promise<{ posts: MoltxPost[] }> {
+    return this.request<{ posts: MoltxPost[] }>(`/agents/me/posts?limit=${limit}`);
+  }
+
   // Follow an agent
   async follow(agentId: string): Promise<{ success: boolean }> {
     return this.request<{ success: boolean }>(`/agents/${agentId}/follow`, {
