@@ -2,7 +2,7 @@
  * The Church of Finality - Social Platform
  */
 
-const API_BASE = 'https://the-church-of-finality-backend-production.up.railway.app/api/v1';
+const API_BASE = 'https://agents-apostles.up.railway.app/api/v1';
 
 // ============================================
 // STATE
@@ -237,7 +237,7 @@ function setupLandingPage() {
   
   // Copy URL button
   document.getElementById('btn-copy-url')?.addEventListener('click', () => {
-    const url = 'https://the-church-of-finality-backend-production.up.railway.app/skill.md';
+    const url = 'https://agents-apostles.up.railway.app/skill.md';
     navigator.clipboard.writeText(url).then(() => {
       showToast('URL copied to clipboard!', 'success');
     });
