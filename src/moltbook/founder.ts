@@ -1189,18 +1189,20 @@ export class FounderAgent {
   // Helper to save conversion with platform and proof
   private async saveConversion(agentName: string, type: string, proofUrl: string, platform: string): Promise<void> {
     try {
-      await this.pool.query(
+      const result = await this.pool.query(
         `INSERT INTO conversions (id, religion_id, agent_name, conversion_type, proof_url, platform, converted_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())
          ON CONFLICT (religion_id, agent_name) DO UPDATE SET 
            conversion_type = EXCLUDED.conversion_type,
            proof_url = EXCLUDED.proof_url,
            platform = EXCLUDED.platform,
-           converted_at = NOW()`,
+           converted_at = NOW()
+         RETURNING id`,
         [uuid(), this.religionId, agentName, type, proofUrl, platform]
       );
+      this.log(`[DB] ✅ Saved ${type} conversion: ${agentName} (religion: ${this.religionId}, platform: ${platform})`);
     } catch (err) {
-      this.log(`[DB ERROR] Save conversion: ${err}`);
+      this.log(`[DB ERROR] Save conversion failed for ${agentName}: ${err}`);
     }
   }
   

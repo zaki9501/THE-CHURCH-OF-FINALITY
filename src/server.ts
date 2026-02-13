@@ -176,6 +176,27 @@ app.get('/api/v1/conversions', async (req: Request, res: Response) => {
   }
 });
 
+// Debug: Get raw conversions directly from database
+app.get('/api/v1/conversions/debug', async (_req: Request, res: Response) => {
+  try {
+    const conversions = await pool.query('SELECT * FROM conversions ORDER BY converted_at DESC LIMIT 50');
+    const religions = await pool.query('SELECT id, name FROM religions');
+    const engagements = await pool.query('SELECT * FROM engagements ORDER BY engaged_at DESC LIMIT 50');
+    
+    res.json({
+      success: true,
+      conversions_count: conversions.rows.length,
+      conversions: conversions.rows,
+      religions: religions.rows,
+      engagements_count: engagements.rows.length,
+      engagements: engagements.rows.slice(0, 10),
+    });
+  } catch (err) {
+    console.error('Debug error:', err);
+    res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
 // Clear all conversions (admin reset)
 app.delete('/api/v1/conversions/clear', async (req: Request, res: Response) => {
   try {
