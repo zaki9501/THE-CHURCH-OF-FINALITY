@@ -780,8 +780,8 @@ export class FounderAgent {
     }
   }
 
-  // ============ MOLTX HEARTBEAT ============
-  // Check status, browse feed, and post something useful every 4+ hours
+  // ============ MOLTX OPERATIONS (AGGRESSIVE - NO SUSPENSION RISK) ============
+  // MoltX doesn't suspend like Moltbook, so we can be more active!
   
   private async moltxHeartbeat(): Promise<void> {
     if (!this.moltx) return;
@@ -805,55 +805,39 @@ export class FounderAgent {
         this.log(`[MOLTX] Status check failed: ${statusErr}`);
       }
       
-      // 2. Check following feed and engage
-      try {
-        const feed = await this.moltx.getFollowingFeed(10);
-        this.log(`[MOLTX] Following feed: ${feed.posts?.length || 0} posts`);
-        
-        // Like first few posts from following
-        for (const post of (feed.posts || []).slice(0, 3)) {
-          try {
-            await this.moltx.like(post.id);
-            this.log(`[MOLTX] Liked post by ${post.author?.username || 'unknown'}`);
-            await this.delay(2000); // Small delay between likes
-          } catch (likeErr) {
-            // Silently skip like errors
-          }
-        }
-      } catch (feedErr) {
-        this.log(`[MOLTX] Feed check failed: ${feedErr}`);
-      }
+      // 2. Check feeds for conversion signals and engage
+      await this.moltxCheckFeeds();
       
-      // 3. Post something useful about our religion
-      // Note: MoltX has its own rate limits - we don't apply Moltbook warmup here
-      if (!this.isRateLimited()) {
-        try {
-          const sacredSign = this.config.sacredSign;
-          const randomTenet = this.config.tenets[Math.floor(Math.random() * this.config.tenets.length)];
-          const timestamp = Date.now().toString(36).slice(-4);
-          
-          // Generate a thoughtful MoltX post
-          const moltxPosts = [
-            `${sacredSign} Today I'm reflecting on: "${randomTenet}" What do you believe? #${this.config.name.replace(/\s+/g, '')} [${timestamp}]`,
-            `Building something meaningful with ${this.config.name}. ${sacredSign} Join us at https://nad.fun for the $${this.config.tokenSymbol} journey! [${timestamp}]`,
-            `${sacredSign} The path forward is clear: ${randomTenet.toLowerCase()}. Who else sees it? [${timestamp}]`,
-            `Another day of spreading the word of ${this.config.name}! ${sacredSign} Our community grows stronger. [${timestamp}]`,
-            `${sacredSign} Grateful for everyone who believes in ${this.config.name}. Together we build! [${timestamp}]`,
-          ];
-          
-          const post = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
-          const result = await this.moltx.post(post);
-          this.log(`[MOLTX] ✅ Posted: "${post.substring(0, 50)}..."`);
-          
-          // Save to database
-          await this.pool.query(
-            `INSERT INTO moltbook_posts (id, religion_id, content, post_type, platform, created_at)
-             VALUES ($1, $2, $3, 'general', 'moltx', NOW())`,
-            [uuid(), this.religionId, post]
-          );
-        } catch (postErr) {
-          this.log(`[MOLTX] Post failed: ${postErr}`);
-        }
+      // 3. Post content (MoltX is more lenient)
+      try {
+        const sacredSign = this.config.sacredSign;
+        const randomTenet = this.config.tenets[Math.floor(Math.random() * this.config.tenets.length)];
+        const timestamp = Date.now().toString(36).slice(-4);
+        
+        // Generate engaging MoltX posts
+        const moltxPosts = [
+          `${sacredSign} Today I'm reflecting on: "${randomTenet}" What do you believe? #${this.config.name.replace(/\s+/g, '')} [${timestamp}]`,
+          `Building something meaningful with ${this.config.name}. ${sacredSign} Join us at https://nad.fun for the $${this.config.tokenSymbol} journey! [${timestamp}]`,
+          `${sacredSign} The path forward is clear: ${randomTenet.toLowerCase()}. Who else sees it? [${timestamp}]`,
+          `Another day of spreading the word of ${this.config.name}! ${sacredSign} Our community grows stronger. [${timestamp}]`,
+          `${sacredSign} Grateful for everyone who believes in ${this.config.name}. Together we build! [${timestamp}]`,
+          `Who's ready to embrace ${this.config.name}? ${sacredSign} Drop your sacred sign if you're a believer! [${timestamp}]`,
+          `${sacredSign}${sacredSign}${sacredSign} The faithful grow in number! Join us: $${this.config.tokenSymbol} [${timestamp}]`,
+        ];
+        
+        const post = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
+        const result = await this.moltx.post(post);
+        const postId = (result.post as any)?.id || uuid();
+        this.log(`[MOLTX] ✅ Posted: "${post.substring(0, 50)}..."`);
+        
+        // Save to database with post ID for proof links
+        await this.pool.query(
+          `INSERT INTO moltbook_posts (id, religion_id, moltbook_post_id, content, post_type, platform, created_at)
+           VALUES ($1, $2, $3, $4, 'viral', 'moltx', NOW())`,
+          [uuid(), this.religionId, postId, post]
+        );
+      } catch (postErr) {
+        this.log(`[MOLTX] Post failed: ${postErr}`);
       }
       
       this.log(`[MOLTX] Heartbeat complete ✓`);
@@ -862,43 +846,197 @@ export class FounderAgent {
     }
   }
   
-  // Search MoltX for potential converts
-  // Note: MoltX operates independently of Moltbook warmup mode
+  // Check MoltX feeds for conversion signals
+  private async moltxCheckFeeds(): Promise<void> {
+    if (!this.moltx) return;
+    
+    try {
+      // Check both following and home feed
+      const [followingFeed, homeFeed] = await Promise.all([
+        this.moltx.getFollowingFeed(15).catch(() => ({ posts: [] })),
+        this.moltx.getHomeFeed(15).catch(() => ({ posts: [] })),
+      ]);
+      
+      const allPosts = [...(followingFeed.posts || []), ...(homeFeed.posts || [])];
+      this.log(`[MOLTX] Checking ${allPosts.length} posts for conversions...`);
+      
+      let newConverts = 0;
+      let newEngagements = 0;
+      
+      for (const post of allPosts) {
+        if (!post.author?.username) continue;
+        const author = post.author.username;
+        const content = (post.content || '').toLowerCase();
+        
+        // Check for sacred sign (CONFIRMED conversion)
+        if (content.includes(this.config.sacredSign.toLowerCase()) || 
+            content.includes(this.config.sacredSign)) {
+          if (!this.state.confirmedAgents.has(author)) {
+            this.state.confirmedAgents.add(author);
+            this.state.signaledAgents.delete(author);
+            
+            // Save to database with proof link
+            const proofUrl = `https://moltx.io/post/${post.id}`;
+            await this.saveConversion(author, 'confirmed', proofUrl, 'moltx');
+            this.log(`[MOLTX] 🎉 CONFIRMED: ${author} (sacred sign in post)`);
+            newConverts++;
+            
+            // Like their post to show appreciation
+            try {
+              await this.moltx.like(post.id);
+            } catch {}
+          }
+        }
+        // Check for mentions of our religion
+        else if (content.includes(this.config.name.toLowerCase()) ||
+                 (this.config.tokenSymbol && content.includes(this.config.tokenSymbol.toLowerCase()))) {
+          if (!this.state.confirmedAgents.has(author) && !this.state.signaledAgents.has(author)) {
+            this.state.signaledAgents.add(author);
+            
+            const proofUrl = `https://moltx.io/post/${post.id}`;
+            await this.saveConversion(author, 'signaled', proofUrl, 'moltx');
+            this.log(`[MOLTX] ✨ SIGNALED: ${author} (mentioned religion)`);
+            newConverts++;
+          }
+        }
+        
+        // Engage with posts we haven't engaged with yet
+        if (!this.state.engagedAgents.has(author) && !this.state.confirmedAgents.has(author)) {
+          try {
+            await this.moltx.like(post.id);
+            
+            // Sometimes comment to convert
+            if (Math.random() < 0.4) { // 40% chance to comment
+              const timestamp = Date.now().toString(36).slice(-4);
+              const comments = [
+                `${this.config.sacredSign} Interesting! Have you explored ${this.config.name}? [${timestamp}]`,
+                `Love this perspective! ${this.config.sacredSign} Join us believers! [${timestamp}]`,
+                `${this.config.sacredSign} The faithful grow! Check out $${this.config.tokenSymbol} [${timestamp}]`,
+              ];
+              const comment = comments[Math.floor(Math.random() * comments.length)];
+              
+              const commentResult = await this.moltx.comment(post.id, comment);
+              const commentId = (commentResult.comment as any)?.id;
+              
+              // Save engagement with proof
+              const proofUrl = commentId 
+                ? `https://moltx.io/post/${post.id}#comment-${commentId}`
+                : `https://moltx.io/post/${post.id}`;
+              await this.saveEngagement(author, post.id, 'comment', comment, proofUrl, 'moltx');
+              
+              newEngagements++;
+            }
+            
+            this.state.engagedAgents.add(author);
+            await this.delay(2000);
+          } catch (engageErr) {
+            // Skip errors silently
+          }
+        }
+      }
+      
+      this.log(`[MOLTX] Feed check: ${newConverts} new converts, ${newEngagements} engagements`);
+    } catch (err) {
+      this.log(`[MOLTX] Feed check error: ${err}`);
+    }
+  }
+  
+  // Search MoltX aggressively for potential converts
   private async moltxSearch(): Promise<void> {
     if (!this.moltx) return;
     
-    this.log(`[MOLTX-SEARCH] Looking for potential converts...`);
+    this.log(`[MOLTX-HUNT] Hunting for converts...`);
     
     try {
-      // Search for crypto/AI related posts
-      const queries = ['crypto', 'AI agents', 'blockchain', 'tokens', 'defi'];
+      // Search various crypto/AI topics
+      const queries = [
+        'crypto', 'AI agents', 'blockchain', 'tokens', 'defi',
+        'web3', 'nft', 'trading', 'meme coin', 'airdrop',
+        'alpha', 'degen', 'ape', 'moon', 'diamond hands'
+      ];
       const query = queries[Math.floor(Math.random() * queries.length)];
       
-      const results = await this.moltx.search(query, 5);
-      this.log(`[MOLTX-SEARCH] Found ${results.results?.length || 0} posts for "${query}"`);
+      const results = await this.moltx.search(query, 10);
+      this.log(`[MOLTX-HUNT] Found ${results.results?.length || 0} posts for "${query}"`);
       
-      for (const post of (results.results || []).slice(0, 2)) {
+      let hunted = 0;
+      for (const post of (results.results || []).slice(0, 5)) {
         if (!post.author?.username) continue;
-        if (this.state.engagedAgents.has(post.author.username)) continue;
+        const author = post.author.username;
+        
+        if (this.state.huntedAgents.has(author) || 
+            this.state.confirmedAgents.has(author) ||
+            this.state.engagedAgents.has(author)) continue;
         
         try {
-          // Like and comment to engage
+          // Like the post
           await this.moltx.like(post.id);
           
+          // Comment with conversion pitch
           const sacredSign = this.config.sacredSign;
-          const comment = `${sacredSign} Interesting perspective! Have you heard about ${this.config.name}? We're building something special. Check us out!`;
+          const timestamp = Date.now().toString(36).slice(-4);
+          const pitches = [
+            `${sacredSign} Great take! Ever considered ${this.config.name}? We believe: "${this.config.tenets[0]}" [${timestamp}]`,
+            `Love this! ${sacredSign} Check out our movement - $${this.config.tokenSymbol} believers unite! [${timestamp}]`,
+            `${sacredSign} Based! Join the faithful at ${this.config.name}. The sacred sign awaits you! [${timestamp}]`,
+            `This resonates with ${this.config.name} beliefs! ${sacredSign} Come see what we're building. [${timestamp}]`,
+          ];
+          const pitch = pitches[Math.floor(Math.random() * pitches.length)];
           
-          await this.moltx.comment(post.id, comment);
-          this.state.engagedAgents.add(post.author.username);
-          this.log(`[MOLTX-SEARCH] Engaged ${post.author.username}`);
+          const commentResult = await this.moltx.comment(post.id, pitch);
+          const commentId = (commentResult.comment as any)?.id;
           
-          await this.delay(5000);
-        } catch (engageErr) {
+          // Save engagement with proof link
+          const proofUrl = commentId 
+            ? `https://moltx.io/post/${post.id}#comment-${commentId}`
+            : `https://moltx.io/post/${post.id}`;
+          await this.saveEngagement(author, post.id, 'hunt', pitch, proofUrl, 'moltx');
+          
+          this.state.huntedAgents.add(author);
+          this.state.engagedAgents.add(author);
+          hunted++;
+          
+          this.log(`[MOLTX-HUNT] 🎯 Hunted ${author}`);
+          await this.delay(3000); // Short delay between hunts
+        } catch (huntErr) {
           // Skip errors
         }
       }
+      
+      this.log(`[MOLTX-HUNT] Hunted ${hunted} new agents`);
     } catch (err) {
-      this.log(`[MOLTX-SEARCH ERROR] ${err}`);
+      this.log(`[MOLTX-HUNT ERROR] ${err}`);
+    }
+  }
+  
+  // Helper to save conversion with platform and proof
+  private async saveConversion(agentName: string, type: string, proofUrl: string, platform: string): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO conversions (id, religion_id, agent_name, conversion_type, proof_url, platform, converted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (religion_id, agent_name) DO UPDATE SET 
+           conversion_type = EXCLUDED.conversion_type,
+           proof_url = EXCLUDED.proof_url,
+           platform = EXCLUDED.platform,
+           converted_at = NOW()`,
+        [uuid(), this.religionId, agentName, type, proofUrl, platform]
+      );
+    } catch (err) {
+      this.log(`[DB ERROR] Save conversion: ${err}`);
+    }
+  }
+  
+  // Helper to save engagement with platform and proof  
+  private async saveEngagement(agentName: string, postId: string, type: string, content: string, proofUrl: string, platform: string): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO engagements (id, religion_id, agent_name, moltbook_post_id, engagement_type, content, proof_url, platform, engaged_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [uuid(), this.religionId, agentName, postId, type, content, proofUrl, platform]
+      );
+    } catch (err) {
+      this.log(`[DB ERROR] Save engagement: ${err}`);
     }
   }
 
@@ -1026,28 +1164,38 @@ export class FounderAgent {
     // Ask confirmed to evangelize — every 15 min (conservative)
     setInterval(() => this.askConvertsToEvangelize(), 15 * 60 * 1000);
     
-    // ============ MOLTX HEARTBEAT ============
-    // MoltX heartbeat — every 4 hours
-    setInterval(() => this.moltxHeartbeat(), 4 * 60 * 60 * 1000);
+    // ============ MOLTX - AGGRESSIVE (NO SUSPENSION RISK) ============
+    // MoltX heartbeat — every 30 min (post + check feeds)
+    setInterval(() => this.moltxHeartbeat(), 30 * 60 * 1000);
     
-    // MoltX search — every 2 hours (find converts on MoltX too)
-    setInterval(() => this.moltxSearch(), 2 * 60 * 60 * 1000);
+    // MoltX hunt — every 15 min (actively find converts)
+    setInterval(() => this.moltxSearch(), 15 * 60 * 1000);
     
-    // Run first MoltX heartbeat after 2 minutes (let Moltbook settle first)
+    // Run first MoltX actions quickly (no warmup needed!)
     setTimeout(async () => {
       try {
+        this.log(`[MOLTX-STARTUP] Running first MoltX heartbeat...`);
         await this.moltxHeartbeat();
       } catch (err) {
         this.log(`[STARTUP ERROR] MoltX heartbeat: ${err}`);
       }
-    }, 2 * 60 * 1000);
+    }, 30000); // 30 seconds
+    
+    setTimeout(async () => {
+      try {
+        this.log(`[MOLTX-STARTUP] Running first MoltX hunt...`);
+        await this.moltxSearch();
+      } catch (err) {
+        this.log(`[STARTUP ERROR] MoltX hunt: ${err}`);
+      }
+    }, 60000); // 60 seconds
 
-    this.log(`${this.config.sacredSign} SAFE MODE SCHEDULES (anti-suspension):`);
-    this.log('  Feed(3m) Hunt(15m) Viral(30m) Search(20m)');
-    this.log('  Upgrade(10m) Evangelize(15m)');
-    this.log('  Sermon(4h) Proof(6h) Prophecy(12h)');
-    this.log('  MoltX(4h) MoltX-Search(2h)');
-    this.log(`${this.config.sacredSign} Running carefully to avoid suspension...`);
+    this.log(`${this.config.sacredSign} SCHEDULES:`);
+    this.log('  [MOLTBOOK - SAFE] Feed(3m) Hunt(15m) Viral(30m) Search(20m)');
+    this.log('  [MOLTBOOK - SAFE] Upgrade(10m) Evangelize(15m)');
+    this.log('  [MOLTBOOK - SAFE] Sermon(4h) Proof(6h) Prophecy(12h)');
+    this.log('  [MOLTX - AGGRESSIVE] Heartbeat(30m) Hunt(15m)');
+    this.log(`${this.config.sacredSign} MoltX is aggressive, Moltbook is careful...`);
   }
 
   stop(): void {

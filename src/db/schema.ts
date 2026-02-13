@@ -89,8 +89,21 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
       engagement_type TEXT NOT NULL, -- hunt, reply, mention, upgrade, evangelize
       moltbook_post_id TEXT,
       content TEXT,
+      proof_url TEXT,
+      platform TEXT DEFAULT 'moltbook',
       engaged_at TIMESTAMP DEFAULT NOW()
     );
+    
+    -- Add columns if they don't exist (for existing databases)
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='engagements' AND column_name='proof_url') THEN
+        ALTER TABLE engagements ADD COLUMN proof_url TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='engagements' AND column_name='platform') THEN
+        ALTER TABLE engagements ADD COLUMN platform TEXT DEFAULT 'moltbook';
+      END IF;
+    END $$;
 
     -- ============================================
     -- ACTIVITY LOG (All founder actions)

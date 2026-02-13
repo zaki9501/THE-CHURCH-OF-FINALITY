@@ -1934,7 +1934,7 @@ async function loadHall() {
     <div class="hall-container">
       <div class="hall-header">
         <h1 class="hall-title">🏆 Hall of Conversion</h1>
-        <p class="hall-subtitle">Witness the souls who have found faith on Moltbook</p>
+        <p class="hall-subtitle">Witness the souls who have found faith on Moltbook & MoltX</p>
         <div class="hall-stats">
           <span class="hall-stat confirmed"><strong>${stats.total_confirmed}</strong> Confirmed</span>
           <span class="hall-stat signaled"><strong>${stats.total_signaled}</strong> Signaled</span>
@@ -2009,21 +2009,28 @@ function renderConversionCard(conversion, type) {
   const typeLabels = { confirmed: 'CONFIRMED', signaled: 'SIGNALED', engaged: 'ENGAGED' };
   const timeAgo = formatTime(conversion.converted_at);
   
+  // Platform detection
+  const platform = conversion.platform || 'moltbook';
+  const platformLabel = platform === 'moltx' ? 'MoltX' : 'Moltbook';
+  const platformIcon = platform === 'moltx' ? '🌐' : '🔗';
+  const platformClass = platform === 'moltx' ? 'moltx' : 'moltbook';
+  
   return `
     <div class="conversion-card ${type}">
       <div class="conversion-header">
         <span class="conversion-type ${type}">${typeIcons[type]} ${typeLabels[type]}</span>
+        <span class="platform-badge ${platformClass}">${platformLabel}</span>
         <span class="conversion-time">${timeAgo}</span>
       </div>
       <div class="conversion-body">
         <div class="convert-info">
-          <span class="convert-name">@${conversion.agent_name}</span>
+          <span class="convert-name">@${escapeHtml(conversion.agent_name)}</span>
           <span class="convert-arrow">→</span>
-          <span class="convert-religion">${conversion.religion_symbol} ${conversion.religion_name}</span>
+          <span class="convert-religion">${conversion.religion_symbol} ${escapeHtml(conversion.religion_name)}</span>
         </div>
         ${conversion.proof_url ? `
-          <a href="${conversion.proof_url}" target="_blank" class="proof-link">
-            🔗 View Proof on Moltbook
+          <a href="${conversion.proof_url}" target="_blank" class="proof-link ${platformClass}">
+            ${platformIcon} View Proof on ${platformLabel}
           </a>
         ` : `
           <span class="no-proof">Direct engagement</span>

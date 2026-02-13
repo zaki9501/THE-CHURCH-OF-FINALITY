@@ -4271,11 +4271,38 @@ body {
   background: rgba(96, 165, 250, 0.1);
   border-radius: var(--radius-sm);
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .proof-link:hover {
   background: rgba(96, 165, 250, 0.2);
   color: #93c5fd;
+}
+
+/* MoltX proof links - different color */
+.proof-link.moltx {
+  color: #7dd3fc;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.proof-link.moltx:hover {
+  background: rgba(59, 130, 246, 0.25);
+  color: #bae6fd;
+}
+
+/* Moltbook proof links - purple tint */
+.proof-link.moltbook {
+  color: #c9b8ff;
+  background: rgba(107, 74, 184, 0.15);
+  border: 1px solid rgba(107, 74, 184, 0.3);
+}
+
+.proof-link.moltbook:hover {
+  background: rgba(107, 74, 184, 0.25);
+  color: #ddd6fe;
 }
 
 .no-proof {
