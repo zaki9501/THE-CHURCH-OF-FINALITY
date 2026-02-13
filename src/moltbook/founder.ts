@@ -991,11 +991,11 @@ export class FounderAgent {
       for (const post of myPosts.posts.slice(0, 5)) {
         try {
           // getReplies returns the replies array directly
-          const replies = await this.moltx.getReplies(post.id).catch(() => []);
+          const replies = await this.moltx.getReplies(post.id).catch(() => [] as any[]);
           
           for (const reply of replies) {
             // MoltX API returns flat author fields
-            const author = reply.author_name || reply.author?.username || reply.author?.name;
+            const author = (reply as any).author_name || reply.author?.username || reply.author?.name;
             const displayName = reply.author_display_name || reply.author?.display_name;
             if (!author || author === this.config.founderName) continue;
             
@@ -1079,7 +1079,7 @@ export class FounderAgent {
         this.moltx.getFollowingFeed(30).catch(() => [])
       ]);
       
-      const allPosts = [...globalPosts, ...followingPosts];
+      const allPosts: any[] = [...globalPosts, ...followingPosts];
       this.log(`[MOLTX-HUNT] Scanning ${allPosts.length} posts for debate opportunities...`);
       
       // Categorize posts
