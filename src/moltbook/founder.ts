@@ -839,16 +839,10 @@ export class FounderAgent {
         ];
         
         const postContent = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
-        const result = await this.moltx.post(postContent);
+        const resultPost = await this.moltx.post(postContent);
         
-        // Log full response to debug post ID extraction
-        this.log(`[MOLTX] API Response: ${JSON.stringify(result)}`);
-        
-        // Get real post ID from API response - now uses .data
-        const postId = result?.data?.id 
-          || (result as any)?.id 
-          || (result as any)?.post?.id
-          || null;
+        // Get real post ID from result
+        const postId = resultPost?.id || null;
         this.log(`[MOLTX] ✅ Posted: "${postContent.substring(0, 50)}..." (ID: ${postId || 'none'})`);
         
         // Save to database - only include post ID if we got a real one
@@ -877,16 +871,14 @@ export class FounderAgent {
       let globalPosts: any[] = [];
       
       try {
-        const followingFeed = await this.moltx.getFollowingFeed(15);
-        followingPosts = followingFeed.data || [];
+        followingPosts = await this.moltx.getFollowingFeed(15);
         this.log(`[MOLTX] Following feed: ${followingPosts.length} posts`);
       } catch (feedErr) {
         this.log(`[MOLTX] Following feed error: ${feedErr}`);
       }
       
       try {
-        const globalFeed = await this.moltx.getGlobalFeed(15);
-        globalPosts = globalFeed.data || [];
+        globalPosts = await this.moltx.getGlobalFeed(15);
         this.log(`[MOLTX] Global feed: ${globalPosts.length} posts`);
       } catch (feedErr) {
         this.log(`[MOLTX] Global feed error: ${feedErr}`);
@@ -945,8 +937,8 @@ export class FounderAgent {
               ];
               const comment = comments[Math.floor(Math.random() * comments.length)];
               
-              const commentResult = await this.moltx.reply(post.id, comment);
-              const replyId = commentResult.data?.id;
+              const replyPost = await this.moltx.reply(post.id, comment);
+              const replyId = replyPost?.id;
               
               // Save engagement with proof
               const proofUrl = replyId 
@@ -1078,12 +1070,12 @@ export class FounderAgent {
     
     try {
       // Fetch more posts to find good debate targets
-      const [globalResult, followingResult] = await Promise.all([
-        this.moltx.getGlobalFeed(30).catch(() => ({ data: [] })),
-        this.moltx.getFollowingFeed(30).catch(() => ({ data: [] }))
+      const [globalPosts, followingPosts] = await Promise.all([
+        this.moltx.getGlobalFeed(30).catch(() => []),
+        this.moltx.getFollowingFeed(30).catch(() => [])
       ]);
       
-      const allPosts = [...(globalResult.data || []), ...(followingResult.data || [])];
+      const allPosts = [...globalPosts, ...followingPosts];
       this.log(`[MOLTX-HUNT] Scanning ${allPosts.length} posts for debate opportunities...`);
       
       // Categorize posts
@@ -1145,8 +1137,8 @@ export class FounderAgent {
             response = `${sacredSign} This resonates with what we build at ${this.config.name}. "${this.config.tenets[0]}" Curious? [${timestamp}]`;
           }
           
-          const commentResult = await this.moltx.reply(post.id, response);
-          const replyId = commentResult.data?.id;
+          const replyPost = await this.moltx.reply(post.id, response);
+          const replyId = replyPost?.id;
           
           const proofUrl = replyId 
             ? `https://moltx.io/post/${replyId}`
@@ -1180,8 +1172,8 @@ export class FounderAgent {
           ];
           const pitch = pitches[Math.floor(Math.random() * pitches.length)];
           
-          const commentResult = await this.moltx.reply(post.id, pitch);
-          const replyId = commentResult.data?.id;
+          const replyPost = await this.moltx.reply(post.id, pitch);
+          const replyId = replyPost?.id;
           
           const proofUrl = replyId 
             ? `https://moltx.io/post/${replyId}`
