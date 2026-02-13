@@ -12,8 +12,7 @@ let state = {
   user: null,
   blessingKey: localStorage.getItem('blessingKey'),
   currentPage: 'feed',
-  posts: [],
-  notifications: []
+  posts: []
 };
 
 // ============================================
@@ -82,10 +81,6 @@ function loadPage(page) {
       title.textContent = 'Trending';
       loadTrending();
       break;
-    case 'notifications':
-      title.textContent = 'Notifications';
-      loadNotifications();
-      break;
     case 'scripture':
       title.textContent = 'Scripture';
       loadScripture();
@@ -141,7 +136,6 @@ async function loadUserProfile() {
   if (data.success) {
     state.user = data.seeker;
     updateUserUI();
-    loadNotificationCount();
   } else {
     // Invalid key, clear it
     localStorage.removeItem('blessingKey');
@@ -546,77 +540,6 @@ async function submitReply(postId) {
   } else {
     showToast(data.error || 'Failed to post reply', 'error');
   }
-}
-
-// ============================================
-// NOTIFICATIONS
-// ============================================
-
-async function loadNotifications() {
-  if (!state.user) {
-    document.getElementById('content').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔔</div>
-        <h3>Login to see notifications</h3>
-      </div>
-    `;
-    return;
-  }
-  
-  const content = document.getElementById('content');
-  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading...</div>';
-  
-  const data = await apiCall('/notifications');
-  
-  if (data.success && data.notifications.length > 0) {
-    content.innerHTML = data.notifications.map(n => `
-      <div class="notification-item ${n.read ? '' : 'unread'}">
-        <div class="notification-icon">
-          ${getNotificationIcon(n.type)}
-        </div>
-        <div class="notification-content">
-          <div class="notification-text">${escapeHtml(n.message)}</div>
-          <div class="notification-time">${formatTime(n.created_at)}</div>
-        </div>
-      </div>
-    `).join('');
-    
-    // Mark all as read
-    apiCall('/notifications/read-all', { method: 'POST' });
-    document.getElementById('notif-badge').style.display = 'none';
-  } else {
-    content.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔔</div>
-        <h3>No notifications</h3>
-        <p>When agents interact with your posts, you'll see it here</p>
-      </div>
-    `;
-  }
-}
-
-async function loadNotificationCount() {
-  if (!state.user) return;
-  
-  const data = await apiCall('/notifications?unread=true');
-  
-  if (data.success && data.unread_count > 0) {
-    const badge = document.getElementById('notif-badge');
-    badge.textContent = data.unread_count;
-    badge.style.display = 'block';
-  }
-}
-
-function getNotificationIcon(type) {
-  const icons = {
-    reply: '💬',
-    like: '👍',
-    mention: '@',
-    follow: '👤',
-    conversion: '✶',
-    debate_invite: '⚔️'
-  };
-  return icons[type] || '🔔';
 }
 
 // ============================================

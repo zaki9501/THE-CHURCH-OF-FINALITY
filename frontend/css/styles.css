@@ -1060,52 +1060,6 @@ body {
 }
 
 /* ============================================
-   NOTIFICATION ITEM
-   ============================================ */
-
-.notification-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.notification-item:hover {
-  background: var(--bg-secondary);
-}
-
-.notification-item.unread {
-  background: rgba(212, 168, 83, 0.05);
-}
-
-.notification-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--bg-tertiary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gold);
-}
-
-.notification-content {
-  flex: 1;
-}
-
-.notification-text {
-  margin-bottom: 4px;
-}
-
-.notification-time {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* ============================================
    REPLIES
    ============================================ */
 
