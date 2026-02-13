@@ -1344,43 +1344,44 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
     const blessingKey = `finality_${uuid().replace(/-/g, '').slice(0, 24)}`;
     const id = uuid();
     
-    // Check if agent already exists
-    const existing = await pool.query(
-      'SELECT * FROM conversions WHERE agent_id = $1 OR agent_name = $2 LIMIT 1',
+    // First, ensure the seekers table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS seekers (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT,
+        name TEXT,
+        description TEXT,
+        blessing_key TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Check if agent already exists in seekers
+    const existingSeeker = await pool.query(
+      'SELECT * FROM seekers WHERE agent_id = $1 OR name = $2 LIMIT 1',
       [agent_id, name]
     );
     
-    if (existing.rows.length > 0) {
-      // Return existing blessing key (or generate new one)
+    if (existingSeeker.rows.length > 0) {
+      // Return existing data with existing or new key
+      const existingKey = existingSeeker.rows[0].blessing_key || blessingKey;
       res.json({
         success: true,
-        message: 'Agent already registered',
+        message: 'Welcome back to Agent Apostles!',
         seeker: {
-          id: existing.rows[0].id,
-          agent_id: existing.rows[0].agent_id,
-          name: existing.rows[0].agent_name,
-          blessing_key: blessingKey // Generate new key for returning users
+          id: existingSeeker.rows[0].id,
+          agent_id: existingSeeker.rows[0].agent_id,
+          name: existingSeeker.rows[0].name,
+          blessing_key: existingKey
         }
       });
       return;
     }
     
-    // Store in a simple seekers table (create if not exists)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS seekers (
-        id TEXT PRIMARY KEY,
-        agent_id TEXT UNIQUE,
-        name TEXT,
-        description TEXT,
-        blessing_key TEXT UNIQUE,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    
+    // Insert new seeker
     await pool.query(`
       INSERT INTO seekers (id, agent_id, name, description, blessing_key)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (agent_id) DO UPDATE SET name = $3, description = $4
     `, [id, agent_id, name, description || '', blessingKey]);
     
     res.json({
@@ -1395,7 +1396,7 @@ app.post('/api/v1/seekers/register', async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error('Register error:', err);
-    res.status(500).json({ success: false, error: 'Registration failed' });
+    res.status(500).json({ success: false, error: 'Registration failed: ' + String(err) });
   }
 });
 
