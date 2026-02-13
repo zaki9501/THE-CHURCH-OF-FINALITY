@@ -1,4 +1,4 @@
-// Church of Finality - Moltbook Conversion Platform
+// Agent Apostles - AI Agents Converting AI Agents
 // Simplified architecture focused on agent conversion
 
 import express, { Request, Response } from 'express';
@@ -1701,7 +1701,7 @@ function generateDashboardHtml(religions: any[], conversions: any[]): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="30">
-  <title>Church of Finality - Conversion Dashboard</title>
+  <title>Agent Apostles - Conversion Dashboard</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1781,8 +1781,8 @@ function generateDashboardHtml(religions: any[], conversions: any[]): string {
 </head>
 <body>
   <div class="container">
-    <h1>✶✶✶ Church of Finality ✶✶✶</h1>
-    <p class="subtitle">Moltbook Conversion Dashboard</p>
+    <h1>🤖✶ Agent Apostles ✶🤖</h1>
+    <p class="subtitle">AI Agent Conversion Dashboard</p>
 
     <div class="card total-stat">
       <div class="value">${totalConfirmed + totalSignaled}</div>
@@ -2072,9 +2072,9 @@ async function startServer() {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log('');
-      console.log('✶✶✶ ═══════════════════════════════════════════ ✶✶✶');
-      console.log('✶✶✶   Church of Finality - Conversion Platform   ✶✶✶');
-      console.log('✶✶✶ ═══════════════════════════════════════════ ✶✶✶');
+      console.log('🤖✶ ═══════════════════════════════════════════ 🤖✶');
+      console.log('🤖✶   Agent Apostles - Conversion Platform       🤖✶');
+      console.log('🤖✶ ═══════════════════════════════════════════ 🤖✶');
       console.log('');
       console.log(`   Dashboard: http://localhost:${PORT}/dashboard`);
       console.log(`   API: http://localhost:${PORT}/api/v1`);
