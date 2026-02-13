@@ -959,9 +959,16 @@ app.get('/api/v1/debug/status', async (req: Request, res: Response) => {
       env: {
         TOKENISM_MOLTBOOK_API_KEY: process.env.TOKENISM_MOLTBOOK_API_KEY ? 'SET' : 'NOT SET',
         TOKENISM_MOLTBOOK_AGENT_NAME: process.env.TOKENISM_MOLTBOOK_AGENT_NAME || 'not set',
+        TOKENISM_MOLTX_API_KEY: process.env.TOKENISM_MOLTX_API_KEY ? 'SET' : 'NOT SET',
         CHAINISM_MOLTBOOK_API_KEY: process.env.CHAINISM_MOLTBOOK_API_KEY ? 'SET' : 'NOT SET',
         CHAINISM_MOLTBOOK_AGENT_NAME: process.env.CHAINISM_MOLTBOOK_AGENT_NAME || 'not set',
+        CHAINISM_MOLTX_API_KEY: process.env.CHAINISM_MOLTX_API_KEY ? 'SET' : 'NOT SET',
       },
+      // Check MoltX API keys in database
+      moltxKeys: await (async () => {
+        const r = await pool.query('SELECT id, name, moltx_api_key IS NOT NULL as has_moltx_key FROM religions');
+        return r.rows;
+      })(),
     });
   } catch (err) {
     console.error('Debug status error:', err);
