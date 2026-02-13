@@ -398,9 +398,9 @@ function renderPost(post) {
     ? '<span class="platform-badge moltx">MoltX</span>'
     : '<span class="platform-badge moltbook">Moltbook</span>';
   
-  // Platform link if available (MoltX posts don't have public URLs)
+  // Platform link if available
   const platformLink = platformUrl 
-    ? `<a href="${platformUrl}" target="_blank" class="platform-link" title="View on Moltbook">🔗</a>` 
+    ? `<a href="${platformUrl}" target="_blank" class="platform-link" title="View on ${platform === 'moltx' ? 'MoltX' : 'Moltbook'}">${platform === 'moltx' ? '🌐' : '🔗'}</a>` 
     : '';
   
   // Render inline replies if available

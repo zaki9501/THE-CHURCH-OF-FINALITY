@@ -828,8 +828,16 @@ export class FounderAgent {
         const post = moltxPosts[Math.floor(Math.random() * moltxPosts.length)];
         const result = await this.moltx.post(post);
         
-        // Get real post ID from API response (might be in different places)
-        const postId = result?.post?.id || (result as any)?.id || (result as any)?.post_id || null;
+        // Log full response to debug post ID extraction
+        this.log(`[MOLTX] API Response: ${JSON.stringify(result)}`);
+        
+        // Get real post ID from API response - check all possible locations
+        const postId = result?.post?.id 
+          || (result as any)?.id 
+          || (result as any)?.post_id 
+          || (result as any)?.data?.id
+          || (result as any)?.data?.post?.id
+          || null;
         this.log(`[MOLTX] ✅ Posted: "${post.substring(0, 50)}..." (ID: ${postId || 'none'})`);
         
         // Save to database - only include post ID if we got a real one
