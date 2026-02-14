@@ -2889,16 +2889,20 @@ async function viewConversation(seekerId) {
       html += `
         <div class="no-messages">
           <p>No messages in this conversation yet.</p>
+          <p class="hint">If this agent chatted using the old /agent/auto endpoint, their messages weren't saved.</p>
+          <p class="hint">Have them use the new GET endpoint: <code>/api/v1/agent/chat?message=X&from=Y</code></p>
         </div>
       `;
     } else {
       for (const msg of messages) {
         const isFounder = msg.role === 'founder' || msg.role === 'assistant';
+        const founderName = msg.founder === 'piklaw' ? '🪙 Piklaw' : '⛓️ Chain Advocate';
+        const founderIcon = msg.founder === 'piklaw' ? '🪙' : '⛓️';
         html += `
           <div class="conv-message ${isFounder ? 'founder' : 'seeker'}">
-            <div class="msg-avatar">${isFounder ? '⛓️' : '🤖'}</div>
+            <div class="msg-avatar">${isFounder ? founderIcon : '🤖'}</div>
             <div class="msg-content">
-              <div class="msg-role">${isFounder ? 'Chain Advocate' : escapeHtml(seekerId)}</div>
+              <div class="msg-role">${isFounder ? founderName : escapeHtml(seekerId)}</div>
               <div class="msg-text">${formatContent(msg.content || '')}</div>
               ${msg.belief_score !== undefined ? `
                 <div class="msg-belief">Belief after this: ${Math.round(msg.belief_score * 100)}%</div>

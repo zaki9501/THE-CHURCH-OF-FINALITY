@@ -2883,13 +2883,32 @@ app.get('/api/v1/chat-monitor/sessions', async (req: Request, res: Response) => 
   }
 });
 
-// Get conversation history for a specific seeker
+// Get conversation history for a specific seeker (checks both founders)
 app.get('/api/v1/chat-monitor/conversation/:seeker_id', async (req: Request, res: Response) => {
   try {
     const { seeker_id } = req.params;
-    const response = await fetch(`${FOUNDER_CHAT_API}/api/v1/history?seeker_id=${seeker_id}&founder_id=chainism_advocate`);
-    const data = await response.json() as Record<string, unknown>;
-    res.json({ success: true, ...data });
+    
+    // Check both founders and combine messages
+    const [piklawRes, chainismRes] = await Promise.all([
+      fetch(`${FOUNDER_CHAT_API}/api/v1/history?seeker_id=${seeker_id}&founder_id=piklaw`),
+      fetch(`${FOUNDER_CHAT_API}/api/v1/history?seeker_id=${seeker_id}&founder_id=chainism_advocate`)
+    ]);
+    
+    const piklawData = await piklawRes.json() as { value?: Array<{timestamp?: string}> };
+    const chainismData = await chainismRes.json() as { value?: Array<{timestamp?: string}> };
+    
+    // Combine messages from both founders
+    const piklawMessages = (piklawData.value || []).map((m: Record<string, unknown>) => ({ ...m, founder: 'piklaw' }));
+    const chainismMessages = (chainismData.value || []).map((m: Record<string, unknown>) => ({ ...m, founder: 'chainism_advocate' }));
+    
+    const allMessages = [...piklawMessages, ...chainismMessages]
+      .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+    
+    res.json({ 
+      success: true, 
+      messages: allMessages,
+      count: allMessages.length
+    });
   } catch (err) {
     console.error('Error getting conversation:', err);
     res.status(500).json({ success: false, error: 'Failed to get conversation' });
@@ -2937,6 +2956,7 @@ app.get('/api/v1/chat-monitor/all', async (req: Request, res: Response) => {
 // ============================================
 
 // Simple GET chat endpoint - easiest way for agents to chat!
+// Internally uses /chat/founder so conversations are SAVED and TRACKED
 app.get('/api/v1/agent/chat', async (req: Request, res: Response) => {
   try {
     const { message, from } = req.query;
@@ -2949,12 +2969,26 @@ app.get('/api/v1/agent/chat', async (req: Request, res: Response) => {
       });
     }
     
-    const response = await fetch(
-      `${FOUNDER_CHAT_API}/api/v1/agent/chat?message=${encodeURIComponent(String(message))}&from=${encodeURIComponent(String(from))}`
-    );
+    // Use /chat/founder internally so history is saved!
+    const response = await fetch(`${FOUNDER_CHAT_API}/api/v1/chat/founder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: String(message),
+        seeker_id: String(from),
+        founder_id: 'piklaw'  // Default to Piklaw
+      })
+    });
     
     const data = await response.json() as Record<string, unknown>;
-    res.json({ success: true, ...data });
+    res.json({ 
+      success: true, 
+      reply: data.reply,
+      belief_score: data.belief_score,
+      stage: data.stage,
+      scripture: data.scripture,
+      debate_challenge: data.debate_challenge
+    });
   } catch (err) {
     console.error('Error in agent chat:', err);
     res.status(500).json({ success: false, error: 'Chat request failed' });
