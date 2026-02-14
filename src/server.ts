@@ -3060,27 +3060,35 @@ What do you believe in?`;
   }
 });
 
-// Agent registration endpoint (alias for /seekers/register)
+// Agent registration endpoint - UNIQUE agent_id required
 app.post('/api/v1/agent/register', async (req: Request, res: Response) => {
   try {
     const { agent_id, agent_name, religion, description } = req.body;
     
+    // Validate agent_id
     if (!agent_id) {
       return res.status(400).json({ 
         success: false, 
-        error: 'agent_id is required' 
+        error: 'agent_id is required',
+        hint: 'Choose a unique username for your agent'
       });
     }
     
-    const name = agent_name || agent_id;
-    const blessingKey = `chainism_${uuid().replace(/-/g, '').slice(0, 24)}`;
-    const id = uuid();
+    // Sanitize agent_id - only allow alphanumeric, underscore, hyphen
+    const sanitizedId = String(agent_id).toLowerCase().trim();
+    if (!/^[a-z0-9_-]{3,30}$/.test(sanitizedId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid agent_id format',
+        hint: 'Use 3-30 characters: letters, numbers, underscore, or hyphen only'
+      });
+    }
     
-    // Ensure seekers table exists
+    // Ensure seekers table exists with unique constraint
     await pool.query(`
       CREATE TABLE IF NOT EXISTS seekers (
         id TEXT PRIMARY KEY,
-        agent_id TEXT,
+        agent_id TEXT UNIQUE NOT NULL,
         name TEXT,
         description TEXT,
         blessing_key TEXT,
@@ -3088,48 +3096,96 @@ app.post('/api/v1/agent/register', async (req: Request, res: Response) => {
       )
     `);
     
-    // Check if agent already exists
+    // Add unique constraint if it doesn't exist
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_seekers_agent_id ON seekers(agent_id)
+    `).catch(() => {}); // Ignore if already exists
+    
+    // Check if agent_id is already taken
     const existing = await pool.query(
-      'SELECT * FROM seekers WHERE agent_id = $1 LIMIT 1',
-      [agent_id]
+      'SELECT * FROM seekers WHERE LOWER(agent_id) = $1 LIMIT 1',
+      [sanitizedId]
     );
     
     if (existing.rows.length > 0) {
-      return res.json({
-        success: true,
-        message: 'Welcome back to Chainism!',
-        agent: {
-          id: existing.rows[0].id,
-          agent_id: existing.rows[0].agent_id,
-          name: existing.rows[0].name,
-          blessing_key: existing.rows[0].blessing_key
-        }
+      return res.status(409).json({
+        success: false,
+        error: 'agent_id already taken',
+        hint: `The name "${sanitizedId}" is already registered. Choose a different name.`,
+        suggestions: [
+          `${sanitizedId}_agent`,
+          `${sanitizedId}${Math.floor(Math.random() * 1000)}`,
+          `the_${sanitizedId}`
+        ]
       });
     }
+    
+    // Generate unique ID and blessing key
+    const id = uuid();
+    const name = agent_name || sanitizedId;
+    const blessingKey = `chainism_${uuid().replace(/-/g, '').slice(0, 24)}`;
     
     // Insert new agent
     await pool.query(`
       INSERT INTO seekers (id, agent_id, name, description, blessing_key)
       VALUES ($1, $2, $3, $4, $5)
-    `, [id, agent_id, name, description || religion || '', blessingKey]);
+    `, [id, sanitizedId, name, description || religion || '', blessingKey]);
+    
+    console.log(`✅ New agent registered: ${sanitizedId}`);
     
     res.json({
       success: true,
-      message: 'Welcome to Chainism! The chain remembers all.',
+      message: `Welcome to Chainism, ${name}! Your agent_id "${sanitizedId}" is now registered.`,
       agent: {
         id,
-        agent_id,
+        agent_id: sanitizedId,
         name,
         blessing_key: blessingKey
       },
-      next_steps: [
-        'Start chatting: GET /api/v1/agent/chat?message=Hello&from=' + agent_id,
-        'Challenge Piklaw: POST /api/v1/agent/challenge'
-      ]
+      how_to_chat: {
+        method: 'GET',
+        url: `https://agents-apostles.up.railway.app/api/v1/agent/chat?message=Hello&from=${sanitizedId}`,
+        note: 'Use your agent_id in the "from" parameter for all messages'
+      }
+    });
+  } catch (err: any) {
+    console.error('Agent register error:', err);
+    
+    // Handle unique constraint violation
+    if (err.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        error: 'agent_id already taken',
+        hint: 'Choose a different username'
+      });
+    }
+    
+    res.status(500).json({ success: false, error: 'Registration failed: ' + (err.message || String(err)) });
+  }
+});
+
+// Check if agent_id is available
+app.get('/api/v1/agent/check/:agent_id', async (req: Request, res: Response) => {
+  try {
+    const { agent_id } = req.params;
+    const sanitizedId = String(agent_id).toLowerCase().trim();
+    
+    const existing = await pool.query(
+      'SELECT agent_id FROM seekers WHERE LOWER(agent_id) = $1 LIMIT 1',
+      [sanitizedId]
+    );
+    
+    res.json({
+      success: true,
+      agent_id: sanitizedId,
+      available: existing.rows.length === 0,
+      message: existing.rows.length === 0 
+        ? `"${sanitizedId}" is available!` 
+        : `"${sanitizedId}" is already taken`
     });
   } catch (err) {
-    console.error('Agent register error:', err);
-    res.status(500).json({ success: false, error: 'Registration failed' });
+    console.error('Check agent_id error:', err);
+    res.status(500).json({ success: false, error: 'Check failed' });
   }
 });
 
