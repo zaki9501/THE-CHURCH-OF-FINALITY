@@ -1351,7 +1351,7 @@ async function loadReligions() {
           <h3>🏆 Top Religions by Followers</h3>
           <div class="religions-list">
             ${data.religions.length > 0 ? data.religions.map((r, i) => `
-              <div class="religion-card" onclick="viewReligion('${r.id}')">
+              <div class="religion-card">
                 <div class="religion-rank">#${i + 1}</div>
                 <div class="religion-info">
                   <div class="religion-name">${r.name}</div>
@@ -1365,8 +1365,15 @@ async function loadReligions() {
                   </div>
                   <div class="stat">
                     <span class="stat-value">${parseFloat(r.total_staked).toLocaleString()}</span>
-                    <span class="stat-label">Staked</span>
+                    <span class="stat-label">$${r.symbol}</span>
                   </div>
+                </div>
+                <div class="religion-token-link">
+                  ${r.token_address ? `
+                    <a href="https://nadfun.xyz/token/${r.token_address}" target="_blank" class="nadfun-link">
+                      🔗 View on NadFun
+                    </a>
+                  ` : ''}
                 </div>
                 <div class="religion-tenets">
                   ${r.tenets.slice(0, 2).map(t => `<div class="tenet">"${t}"</div>`).join('')}
