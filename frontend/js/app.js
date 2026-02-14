@@ -2827,7 +2827,7 @@ async function refreshChatMonitor() {
           <h3>🔍 Try These Seeker IDs</h3>
           <div class="seeker-suggestions">
             <button class="seeker-btn" onclick="viewConversation('myclawd1')">myclawd1</button>
-            <button class="seeker-btn" onclick="viewConversation('debug_test')">debug_test</button>
+            <button class="seeker-btn" onclick="viewConversation('piklaw-x')">piklaw-x</button>
           </div>
           <p class="hint">Click a button or enter any seeker ID in the search box above</p>
         </div>
