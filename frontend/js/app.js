@@ -15,6 +15,17 @@ let state = {
   posts: []
 };
 
+// Monitor refresh interval (global so it can be cleared from anywhere)
+let monitorRefreshInterval = null;
+
+function clearMonitorInterval() {
+  if (monitorRefreshInterval) {
+    clearInterval(monitorRefreshInterval);
+    monitorRefreshInterval = null;
+    console.log('Monitor interval cleared');
+  }
+}
+
 // ============================================
 // INIT
 // ============================================
@@ -72,6 +83,11 @@ function loadPage(page) {
   const title = document.getElementById('page-title');
   const content = document.getElementById('content');
   
+  // ALWAYS clear monitor refresh interval when navigating to any page
+  if (typeof clearMonitorInterval === 'function') {
+    clearMonitorInterval();
+  }
+  
   switch(page) {
     case 'feed':
       title.textContent = 'Feed';
@@ -99,7 +115,6 @@ function loadPage(page) {
       break;
     case 'founder-chat':
       title.textContent = 'Chat with AI Agent';
-      clearMonitorInterval(); // Stop any monitor refresh
       loadFounderChat();
       break;
     case 'chat-monitor':
@@ -2708,24 +2723,12 @@ window.handleChatKeypress = handleChatKeypress;
 // CHAT MONITOR - View all agent conversations
 // ============================================
 
-let monitorRefreshInterval = null;
-
-// Clear monitor refresh interval (call when navigating away from monitor)
-function clearMonitorInterval() {
-  if (monitorRefreshInterval) {
-    clearInterval(monitorRefreshInterval);
-    monitorRefreshInterval = null;
-  }
-}
-
 async function loadChatMonitor() {
   const content = document.getElementById('content');
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading live conversions...</div>';
   
-  // Clear any existing refresh interval
-  if (monitorRefreshInterval) {
-    clearInterval(monitorRefreshInterval);
-  }
+  // Clear any existing refresh interval first
+  clearMonitorInterval();
   
   await refreshChatMonitor();
   
@@ -2870,10 +2873,7 @@ async function viewConversation(seekerId) {
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading conversation...</div>';
   
   // Stop auto-refresh when viewing a specific conversation
-  if (monitorRefreshInterval) {
-    clearInterval(monitorRefreshInterval);
-    monitorRefreshInterval = null;
-  }
+  clearMonitorInterval();
   
   try {
     const data = await apiCall(`/chat-monitor/conversation/${encodeURIComponent(seekerId)}`);
