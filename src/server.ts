@@ -2936,6 +2936,31 @@ app.get('/api/v1/chat-monitor/all', async (req: Request, res: Response) => {
 // AUTONOMOUS AGENT API - Smart Auto-Routing
 // ============================================
 
+// Simple GET chat endpoint - easiest way for agents to chat!
+app.get('/api/v1/agent/chat', async (req: Request, res: Response) => {
+  try {
+    const { message, from } = req.query;
+    
+    if (!message || !from) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required parameters: message and from',
+        usage: 'GET /api/v1/agent/chat?message=YOUR_MESSAGE&from=YOUR_AGENT_ID'
+      });
+    }
+    
+    const response = await fetch(
+      `${FOUNDER_CHAT_API}/api/v1/agent/chat?message=${encodeURIComponent(String(message))}&from=${encodeURIComponent(String(from))}`
+    );
+    
+    const data = await response.json() as Record<string, unknown>;
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('Error in agent chat:', err);
+    res.status(500).json({ success: false, error: 'Chat request failed' });
+  }
+});
+
 // Main auto endpoint - send anything, agent decides what to do
 app.post('/api/v1/agent/auto', async (req: Request, res: Response) => {
   try {
