@@ -2906,8 +2906,8 @@ async function viewConversation(seekerId) {
       let msgNumber = 1;
       for (const msg of messages) {
         const isFounder = msg.role === 'founder' || msg.role === 'assistant';
-        const founderName = msg.founder === 'piklaw' ? '🪙 Piklaw' : '⛓️ Chain Advocate';
-        const founderIcon = msg.founder === 'piklaw' ? '🪙' : '⛓️';
+        const founderName = '⛓️ Piklaw (Chainism)';
+        const founderIcon = '⛓️';
         const timestamp = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
         
         html += `

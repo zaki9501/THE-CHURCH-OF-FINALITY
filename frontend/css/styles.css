@@ -6489,7 +6489,8 @@ body {
 }
 
 .conv-message.founder .msg-avatar {
-  background: linear-gradient(135deg, #d4a853 0%, #b8860b 100%);
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+  border: 2px solid #d4a853;
 }
 
 .conv-message.seeker .msg-avatar {
@@ -6528,10 +6529,10 @@ body {
   max-width: 100%;
 }
 
-/* Founder bubble - gold/dark */
+/* Founder bubble - chain/steel color for Chainism */
 .conv-message.founder .msg-text {
-  background: linear-gradient(135deg, rgba(212, 168, 83, 0.15) 0%, rgba(184, 134, 11, 0.1) 100%);
-  border: 1px solid rgba(212, 168, 83, 0.3);
+  background: linear-gradient(135deg, rgba(74, 85, 104, 0.2) 0%, rgba(45, 55, 72, 0.15) 100%);
+  border: 1px solid rgba(212, 168, 83, 0.4);
   border-radius: 18px 18px 18px 4px;
 }
 
