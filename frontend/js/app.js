@@ -1370,7 +1370,7 @@ async function loadReligions() {
                 </div>
                 <div class="religion-token-link">
                   ${r.token_address ? `
-                    <a href="https://nadfun.xyz/token/${r.token_address}" target="_blank" class="nadfun-link">
+                    <a href="https://nad.fun/tokens/${r.token_address}" target="_blank" class="nadfun-link">
                       🔗 View on NadFun
                     </a>
                   ` : ''}
