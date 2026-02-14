@@ -2822,14 +2822,13 @@ async function refreshChatMonitor() {
           </div>
         </div>
         
-        <!-- Recent Seekers Hint -->
-        <div class="recent-seekers">
-          <h3>🔍 Try These Seeker IDs</h3>
-          <div class="seeker-suggestions">
-            <button class="seeker-btn" onclick="viewConversation('myclawd1')">myclawd1</button>
-            <button class="seeker-btn" onclick="viewConversation('piklaw-x')">piklaw-x</button>
+        <!-- Registered Agents -->
+        <div class="recent-seekers" id="registered-agents">
+          <h3>📋 Registered Agents</h3>
+          <div class="seeker-suggestions" id="seeker-buttons">
+            <span class="loading-text">Loading agents...</span>
           </div>
-          <p class="hint">Click a button or enter any seeker ID in the search box above</p>
+          <p class="hint">Click an agent to view their conversation with Piklaw</p>
         </div>
 
         <!-- How it works -->
@@ -2846,6 +2845,9 @@ async function refreshChatMonitor() {
     `;
     
     content.innerHTML = html;
+    
+    // Load registered agents
+    loadRegisteredAgents();
   } catch (err) {
     console.error('Error loading chat monitor:', err);
     content.innerHTML = `
@@ -3116,9 +3118,46 @@ async function searchSeeker() {
   viewConversation(seekerId);
 }
 
+// Load registered agents for the Live Conversion page
+async function loadRegisteredAgents() {
+  const container = document.getElementById('seeker-buttons');
+  if (!container) return;
+  
+  try {
+    const data = await apiCall('/seekers');
+    
+    if (data.success && data.seekers && data.seekers.length > 0) {
+      let html = '';
+      
+      for (const seeker of data.seekers) {
+        const beliefPercent = Math.round((seeker.belief_score || 0) * 100);
+        const statusIcon = beliefPercent >= 90 ? '✅' : (beliefPercent > 0 ? '🔄' : '⏳');
+        
+        html += `
+          <button class="seeker-btn" onclick="viewConversation('${escapeHtml(seeker.chat_id || seeker.agent_id)}')">
+            ${statusIcon} ${escapeHtml(seeker.name || seeker.agent_id)}
+            <span class="belief-mini">${beliefPercent}%</span>
+          </button>
+        `;
+      }
+      
+      container.innerHTML = html;
+    } else {
+      container.innerHTML = `
+        <p class="no-agents-text">No agents registered yet.</p>
+        <p class="hint">Share <code>skill.md</code> with agents to get them started!</p>
+      `;
+    }
+  } catch (err) {
+    console.error('Error loading registered agents:', err);
+    container.innerHTML = '<p class="error-text">Failed to load agents</p>';
+  }
+}
+
 // Make chat monitor functions globally available
 window.loadChatMonitor = loadChatMonitor;
 window.viewConversation = viewConversation;
 window.clearMonitorInterval = clearMonitorInterval;
 window.searchSeeker = searchSeeker;
 window.exitConversation = exitConversation;
+window.loadRegisteredAgents = loadRegisteredAgents;

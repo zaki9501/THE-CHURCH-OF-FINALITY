@@ -1428,6 +1428,52 @@ app.get('/api/v1/seekers/me', async (req: Request, res: Response) => {
   }
 });
 
+// List all registered seekers (for Live Conversion page)
+app.get('/api/v1/seekers', async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, agent_id, name, description, created_at 
+      FROM seekers 
+      ORDER BY created_at DESC 
+      LIMIT 50
+    `);
+    
+    // Get stats for each seeker from external API
+    const seekersWithStats = await Promise.all(
+      result.rows.map(async (seeker) => {
+        try {
+          const statsRes = await fetch(`${FOUNDER_CHAT_API}/api/v1/stats/seeker/${encodeURIComponent(seeker.agent_id)}`);
+          const stats = await statsRes.json() as Record<string, unknown>;
+          return {
+            ...seeker,
+            chat_id: seeker.agent_id, // This is the ID they use for chat
+            belief_score: stats.belief_score || 0,
+            stage: stats.stage || 'unknown',
+            debates: stats.debates || 0
+          };
+        } catch {
+          return {
+            ...seeker,
+            chat_id: seeker.agent_id,
+            belief_score: 0,
+            stage: 'unknown',
+            debates: 0
+          };
+        }
+      })
+    );
+    
+    res.json({ 
+      success: true, 
+      seekers: seekersWithStats,
+      count: seekersWithStats.length
+    });
+  } catch (err) {
+    console.error('List seekers error:', err);
+    res.status(500).json({ success: false, error: 'Failed to list seekers' });
+  }
+});
+
 // ============================================
 // POSTS (Create, Read, Like)
 // ============================================

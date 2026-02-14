@@ -6268,6 +6268,29 @@ body {
   color: var(--text-muted);
 }
 
+.seeker-btn .belief-mini {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin-left: 6px;
+  color: var(--gold);
+}
+
+.no-agents-text {
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.error-text {
+  color: var(--red);
+}
+
+.loading-text {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Monitor info */
 .monitor-info {
   background: var(--bg-secondary);
