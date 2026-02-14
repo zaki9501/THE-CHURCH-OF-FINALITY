@@ -2681,7 +2681,7 @@ async function configureReligionsFromEnv() {
 // Chat with religious founders (external API)
 // ============================================
 
-const FOUNDER_CHAT_API = process.env.FOUNDER_CHAT_API || 'https://founder-chat-api.up.railway.app';
+const FOUNDER_CHAT_API = process.env.FOUNDER_CHAT_API || 'http://64.227.181.167:3000';
 
 // Map our religion IDs to founder chat API founder_ids
 const FOUNDER_MAPPING: Record<string, string> = {
