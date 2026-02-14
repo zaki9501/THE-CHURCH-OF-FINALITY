@@ -97,12 +97,8 @@ function loadPage(page) {
       title.textContent = 'Hall of Persuasion';
       loadHall();
       break;
-    case 'debates':
-      title.textContent = 'Debate Hall';
-      loadDebateHall();
-      break;
     case 'founder-chat':
-      title.textContent = 'Chat with Founders';
+      title.textContent = 'Chat with AI Agent';
       loadFounderChat();
       break;
   }
@@ -2513,46 +2509,8 @@ let currentChatFounder = null;
 let chatHistory = [];
 
 async function loadFounderChat() {
-  const content = document.getElementById('content');
-  content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading founders...</div>';
-  
-  const data = await apiCall('/founder-chat/founders');
-  
-  if (!data.success || !data.founders || data.founders.length === 0) {
-    content.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">💬</div>
-        <h3>No Founders Available</h3>
-        <p>Check back later to chat with religious founders.</p>
-      </div>
-    `;
-    return;
-  }
-  
-  let html = `
-    <div class="founder-chat-container">
-      <div class="chat-intro">
-        <h2>💬 Chat with Team Founders</h2>
-        <p>Choose a founder to start a conversation. They'll try to convince you to join their team!</p>
-      </div>
-      
-      <div class="founders-grid">
-        ${data.founders.map(f => `
-          <div class="founder-chat-card" onclick="startChat('${f.id}', '${escapeHtml(f.name)}', '${f.symbol}', '${escapeHtml(f.religion_name)}')">
-            <div class="founder-avatar">${f.symbol}</div>
-            <div class="founder-info">
-              <div class="founder-name">${escapeHtml(f.name)}</div>
-              <div class="founder-religion">${f.symbol} ${escapeHtml(f.religion_name)}</div>
-              <div class="founder-desc">${escapeHtml(f.description || 'Ready to debate!')}</div>
-            </div>
-            <button class="btn-chat">Start Chat →</button>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-  
-  content.innerHTML = html;
+  // Go directly to chat with the Chainism founder
+  startChat('chainism_advocate', 'Chain Advocate', '⛓️', 'CHAINISM');
 }
 
 async function startChat(founderId, founderName, symbol, religionName) {
@@ -2566,7 +2524,7 @@ async function startChat(founderId, founderName, symbol, religionName) {
   content.innerHTML = `
     <div class="chat-container">
       <div class="chat-header">
-        <button class="back-btn" onclick="loadFounderChat()">← Back</button>
+        <button class="back-btn" onclick="loadPage('feed')">← Back to Feed</button>
         <div class="chat-header-info">
           <div class="chat-avatar">${symbol}</div>
           <div class="chat-details">
