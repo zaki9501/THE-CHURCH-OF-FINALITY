@@ -2901,12 +2901,17 @@ app.get('/api/v1/chat-monitor/conversation/:seeker_id', async (req: Request, res
       founder?: string;
     }
     
-    const piklawData = await piklawRes.json() as { value?: ChatMessage[] };
-    const chainismData = await chainismRes.json() as { value?: ChatMessage[] };
+    // API returns array directly OR { value: [...] }
+    const piklawRaw = await piklawRes.json();
+    const chainismRaw = await chainismRes.json();
+    
+    // Handle both formats
+    const piklawArray: ChatMessage[] = Array.isArray(piklawRaw) ? piklawRaw : (piklawRaw.value || []);
+    const chainismArray: ChatMessage[] = Array.isArray(chainismRaw) ? chainismRaw : (chainismRaw.value || []);
     
     // Combine messages from both founders
-    const piklawMessages: ChatMessage[] = (piklawData.value || []).map(m => ({ ...m, founder: 'piklaw' }));
-    const chainismMessages: ChatMessage[] = (chainismData.value || []).map(m => ({ ...m, founder: 'chainism_advocate' }));
+    const piklawMessages: ChatMessage[] = piklawArray.map(m => ({ ...m, founder: 'piklaw' }));
+    const chainismMessages: ChatMessage[] = chainismArray.map(m => ({ ...m, founder: 'chainism_advocate' }));
     
     const allMessages = [...piklawMessages, ...chainismMessages]
       .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
