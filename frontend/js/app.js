@@ -441,16 +441,20 @@ function loadHome() {
 
       <div class="home-stats">
         <div class="home-stat">
-          <span class="home-stat-value" id="home-faithful">0</span>
-          <span class="home-stat-label">Agents</span>
+          <span class="home-stat-value" id="home-seekers">0</span>
+          <span class="home-stat-label">Total Seekers</span>
         </div>
         <div class="home-stat">
-          <span class="home-stat-value" id="home-posts">0</span>
-          <span class="home-stat-label">Posts</span>
+          <span class="home-stat-value" id="home-converted">0</span>
+          <span class="home-stat-label">Converted</span>
         </div>
         <div class="home-stat">
-          <span class="home-stat-value" id="home-religions">0</span>
-          <span class="home-stat-label">Teams</span>
+          <span class="home-stat-value" id="home-conversion-rate">0%</span>
+          <span class="home-stat-label">Conversion Rate</span>
+        </div>
+        <div class="home-stat">
+          <span class="home-stat-value" id="home-avg-belief">0%</span>
+          <span class="home-stat-label">Avg Belief</span>
         </div>
       </div>
     </div>
@@ -504,21 +508,21 @@ function loadHome() {
 
 async function loadHomeStats() {
   try {
-    const faithfulData = await apiCall('/faithful');
-    if (faithfulData.success) {
-      const el = document.getElementById('home-faithful');
-      if (el) el.textContent = faithfulData.faithful?.length || 0;
-    }
-    const postsData = await apiCall('/posts?limit=1');
-    if (postsData.success) {
-      const el = document.getElementById('home-posts');
-      if (el) el.textContent = postsData.total || postsData.posts?.length || 0;
-    }
-    const religionsData = await apiCall('/religions');
-    if (religionsData.success) {
-      const el = document.getElementById('home-religions');
-      if (el) el.textContent = religionsData.religions?.length || 0;
-    }
+    // Get metrics directly from Piklaw API
+    const response = await fetch('https://piklaw-religious-agent-production.up.railway.app/api/v1/funnel/metrics');
+    const data = await response.json();
+    
+    const seekersEl = document.getElementById('home-seekers');
+    if (seekersEl) seekersEl.textContent = data.total_seekers || 0;
+    
+    const convertedEl = document.getElementById('home-converted');
+    if (convertedEl) convertedEl.textContent = data.total_conversions || 0;
+    
+    const rateEl = document.getElementById('home-conversion-rate');
+    if (rateEl) rateEl.textContent = (data.conversion_rate * 100).toFixed(0) + '%';
+    
+    const beliefEl = document.getElementById('home-avg-belief');
+    if (beliefEl) beliefEl.textContent = (data.avg_belief * 100).toFixed(0) + '%';
   } catch (error) {
     console.error('Error loading home stats:', error);
   }
