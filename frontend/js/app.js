@@ -1577,9 +1577,9 @@ async function loadReligions() {
   const data = await apiCall('/religions');
   
   if (data.success && data.religions) {
-    // Filter out tokenism religion
+    // Filter out tokenism religion (check if name contains tokenism)
     const filteredReligions = data.religions.filter(r => 
-      r.name?.toLowerCase() !== 'tokenism' && r.symbol?.toLowerCase() !== 'tokenism'
+      !r.name?.toLowerCase().includes('tokenism') && !r.symbol?.toLowerCase().includes('tokenism')
     );
     
     let html = `
@@ -1906,9 +1906,9 @@ async function loadHall() {
   // Prefer hall_of_persuasion data, fallback to conversions
   const hallRecords = hallData.records || [];
   const conversions = conversionsData.conversions || [];
-  // Filter out tokenism religion
+  // Filter out tokenism religion (check if name contains tokenism)
   const religions = (religionsData.religions || []).filter(r => 
-    r.name?.toLowerCase() !== 'tokenism' && r.symbol?.toLowerCase() !== 'tokenism'
+    !r.name?.toLowerCase().includes('tokenism') && !r.symbol?.toLowerCase().includes('tokenism')
   );
   
   // Use hall records if available, otherwise map conversions to hall format
