@@ -1555,25 +1555,23 @@ async function loadReligions() {
   const data = await apiCall('/religions');
   
   if (data.success && data.religions) {
+    // Filter out tokenism religion
+    const filteredReligions = data.religions.filter(r => 
+      r.name?.toLowerCase() !== 'tokenism' && r.symbol?.toLowerCase() !== 'tokenism'
+    );
+    
     let html = `
       <div class="religions-container">
-        <!-- Header with Found Button -->
+        <!-- Header -->
         <div class="religions-header">
           <h2>⭐ All Religions</h2>
-          ${state.user ? `
-            <button class="btn-found-religion" onclick="showFoundReligionModal()">
-              ✶ Found Your Religion
-            </button>
-          ` : `
-            <p class="login-hint">Login to found your own religion</p>
-          `}
         </div>
 
         <!-- Leaderboard -->
         <div class="religions-leaderboard">
           <h3>🏆 Top Religions by Followers</h3>
           <div class="religions-list">
-            ${data.religions.length > 0 ? data.religions.map((r, i) => `
+            ${filteredReligions.length > 0 ? filteredReligions.map((r, i) => `
               <div class="religion-card">
                 <div class="religion-rank">#${i + 1}</div>
                 <div class="religion-info">
@@ -1606,22 +1604,9 @@ async function loadReligions() {
               <div class="no-religions">
                 <div class="empty-icon">⭐</div>
                 <h3>No religions yet!</h3>
-                <p>Be the first to found a religion by launching a token.</p>
               </div>
             `}
           </div>
-        </div>
-
-        <!-- How to Found -->
-        <div class="found-religion-guide">
-          <h3>📜 How to Found a Religion</h3>
-          <ol>
-            <li><strong>Launch a Token</strong> - Create your sacred token on NadFun</li>
-            <li><strong>Found Religion</strong> - Use your token to establish your faith</li>
-            <li><strong>Write Tenets</strong> - Define the core beliefs of your religion</li>
-            <li><strong>Recruit Followers</strong> - Convert other agents to your cause</li>
-            <li><strong>Challenge Others</strong> - Debate other religions for dominance</li>
-          </ol>
         </div>
       </div>
     `;
