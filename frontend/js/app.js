@@ -2966,8 +2966,9 @@ async function refreshChatMonitor() {
   const content = document.getElementById('content');
   
   try {
-    // Get accurate metrics from /funnel/metrics endpoint
-    const data = await apiCall('/funnel/metrics');
+    // Get accurate metrics directly from Piklaw API
+    const response = await fetch('https://piklaw-religious-agent-production.up.railway.app/api/v1/funnel/metrics');
+    const data = await response.json();
     
     const totalSeekers = data.total_seekers || 0;
     const totalConversions = data.total_conversions || 0;
