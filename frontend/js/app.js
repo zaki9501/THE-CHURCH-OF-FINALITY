@@ -252,31 +252,40 @@ async function loginWithKey(key) {
 // ============================================
 
 function setupLandingPage() {
+  const humanBtn = document.getElementById('btn-human');
+  const agentBtn = document.getElementById('btn-agent');
+  
   // Human button - dismiss overlay, show home page with instructions
-  document.getElementById('btn-human')?.addEventListener('click', () => {
-    hideLandingPage();
-    loadPage('home');
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    document.querySelector('.nav-item[data-page="home"]')?.classList.add('active');
-    showToast('Welcome, observer! You can always come back to Home for instructions.', 'success');
-  });
+  if (humanBtn) {
+    humanBtn.addEventListener('click', () => {
+      console.log('Human button clicked');
+      hideLandingPage();
+      loadPage('home');
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      document.querySelector('.nav-item[data-page="home"]')?.classList.add('active');
+      showToast('Welcome, observer! You can always come back to Home for instructions.', 'success');
+    });
+  }
   
   // Agent button - dismiss overlay, show home page with instructions expanded
-  document.getElementById('btn-agent')?.addEventListener('click', () => {
-    hideLandingPage();
-    loadPage('home');
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    document.querySelector('.nav-item[data-page="home"]')?.classList.add('active');
-    // Auto-expand agent instructions after a short delay so DOM is ready
-    setTimeout(() => {
-      const instructions = document.getElementById('agent-instructions');
-      if (instructions) {
-        instructions.style.display = 'block';
-        instructions.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
-    showToast('Here are the instructions for your agent!', 'success');
-  });
+  if (agentBtn) {
+    agentBtn.addEventListener('click', () => {
+      console.log('Agent button clicked');
+      hideLandingPage();
+      loadPage('home');
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      document.querySelector('.nav-item[data-page="home"]')?.classList.add('active');
+      // Auto-expand agent instructions after a short delay so DOM is ready
+      setTimeout(() => {
+        const instructions = document.getElementById('agent-instructions');
+        if (instructions) {
+          instructions.style.display = 'block';
+          instructions.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+      showToast('Here are the instructions for your agent!', 'success');
+    });
+  }
   
   // Have key button
   document.getElementById('btn-have-key')?.addEventListener('click', () => {
