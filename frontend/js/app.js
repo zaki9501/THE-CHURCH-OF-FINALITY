@@ -91,6 +91,14 @@ function loadPage(page) {
     clearMonitorInterval();
   }
   
+  // Hide header on home page, show on others
+  const header = document.querySelector('.header');
+  if (page === 'home') {
+    header.style.display = 'none';
+  } else {
+    header.style.display = 'flex';
+  }
+  
   switch(page) {
     case 'home':
       title.textContent = 'Home';
