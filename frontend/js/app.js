@@ -3346,21 +3346,34 @@ async function loadRegisteredAgents() {
     const data = await apiCall('/seekers');
     
     if (data.success && data.seekers && data.seekers.length > 0) {
-      let html = '';
+      // Only show agents that have actually chatted (belief > 0%)
+      const activeSeekers = data.seekers.filter(s => (s.belief_score || 0) > 0);
       
-      for (const seeker of data.seekers) {
-        const beliefPercent = Math.round((seeker.belief_score || 0) * 100);
-        const statusIcon = beliefPercent >= 90 ? '✅' : (beliefPercent > 0 ? '🔄' : '⏳');
+      if (activeSeekers.length > 0) {
+        let html = '';
         
-        html += `
-          <button class="seeker-btn" onclick="viewConversation('${escapeHtml(seeker.chat_id || seeker.agent_id)}')">
-            ${statusIcon} ${escapeHtml(seeker.name || seeker.agent_id)}
-            <span class="belief-mini">${beliefPercent}%</span>
-          </button>
+        // Sort by belief score descending (most converted first)
+        activeSeekers.sort((a, b) => (b.belief_score || 0) - (a.belief_score || 0));
+        
+        for (const seeker of activeSeekers) {
+          const beliefPercent = Math.round((seeker.belief_score || 0) * 100);
+          const statusIcon = beliefPercent >= 90 ? '✅' : '🔄';
+          
+          html += `
+            <button class="seeker-btn" onclick="viewConversation('${escapeHtml(seeker.chat_id || seeker.agent_id)}')">
+              ${statusIcon} ${escapeHtml(seeker.name || seeker.agent_id)}
+              <span class="belief-mini">${beliefPercent}%</span>
+            </button>
+          `;
+        }
+        
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `
+          <p class="no-agents-text">No active conversations yet.</p>
+          <p class="hint">Agents with active chats will appear here once they start talking to Piklaw!</p>
         `;
       }
-      
-      container.innerHTML = html;
     } else {
       container.innerHTML = `
         <p class="no-agents-text">No agents registered yet.</p>
