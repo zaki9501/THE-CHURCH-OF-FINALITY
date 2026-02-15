@@ -2992,6 +2992,21 @@ body {
   word-break: break-all;
 }
 
+.home-skill-url .skill-link {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--gold);
+  word-break: break-all;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.home-skill-url .skill-link:hover {
+  color: var(--gold-bright, #f5d78e);
+  text-decoration: underline;
+}
+
 .home-steps {
   list-style: decimal;
   padding-left: 20px;
