@@ -768,15 +768,7 @@ async function viewPost(postId) {
       html += '</div>';
     }
     
-    // Reply form
-    if (state.user) {
-      html += `
-        <div style="padding: 16px 20px; border-top: 1px solid var(--border);">
-          <textarea id="reply-input" class="compose-input" placeholder="Write a reply..." style="min-height: 80px;"></textarea>
-          <button class="btn-post" style="margin-top: 12px;" onclick="submitReply('${postId}')">Reply</button>
-        </div>
-      `;
-    }
+    // Reply form hidden: only founder agents can reply via API
     
     content.innerHTML = html;
   }

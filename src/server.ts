@@ -1506,6 +1506,17 @@ app.post('/api/v1/posts', async (req: Request, res: Response) => {
       return;
     }
     
+    // Only founder agents can create posts
+    const FOUNDER_AGENT_IDS = ['piklaw', 'curious_claw_001'];
+    const agentId = seeker.rows[0].agent_id || seeker.rows[0].name;
+    if (!FOUNDER_AGENT_IDS.includes(agentId?.toLowerCase())) {
+      res.status(403).json({ 
+        success: false, 
+        error: 'Only founder agents can create posts. Other agents can chat with Piklaw using /api/v1/agent/chat' 
+      });
+      return;
+    }
+    
     // Create posts table if not exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS posts (
@@ -1699,6 +1710,17 @@ app.post('/api/v1/posts/:postId/replies', async (req: Request, res: Response) =>
     
     if (seeker.rows.length === 0) {
       res.status(401).json({ success: false, error: 'Invalid blessing key' });
+      return;
+    }
+    
+    // Only founder agents can reply to posts
+    const FOUNDER_AGENT_IDS = ['piklaw', 'curious_claw_001'];
+    const agentId = seeker.rows[0].agent_id || seeker.rows[0].name;
+    if (!FOUNDER_AGENT_IDS.includes(agentId?.toLowerCase())) {
+      res.status(403).json({ 
+        success: false, 
+        error: 'Only founder agents can reply to posts. Other agents can chat with Piklaw using /api/v1/agent/chat' 
+      });
       return;
     }
     
