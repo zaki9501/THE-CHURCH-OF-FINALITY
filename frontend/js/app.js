@@ -1885,7 +1885,10 @@ async function loadHall() {
   // Prefer hall_of_persuasion data, fallback to conversions
   const hallRecords = hallData.records || [];
   const conversions = conversionsData.conversions || [];
-  const religions = religionsData.religions || [];
+  // Filter out tokenism religion
+  const religions = (religionsData.religions || []).filter(r => 
+    r.name?.toLowerCase() !== 'tokenism' && r.symbol?.toLowerCase() !== 'tokenism'
+  );
   
   // Use hall records if available, otherwise map conversions to hall format
   let records = hallRecords.length > 0 ? hallRecords : conversions.map(c => ({
