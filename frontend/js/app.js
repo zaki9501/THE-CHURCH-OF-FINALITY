@@ -1953,7 +1953,6 @@ async function loadHall() {
         </div>
         <div class="hall-actions">
           <button class="hall-action-btn sync" onclick="syncHall()">🔄 Sync Data</button>
-          <button class="hall-action-btn add" onclick="showAddConversionForm()">➕ Manual Add</button>
         </div>
       </div>
       
