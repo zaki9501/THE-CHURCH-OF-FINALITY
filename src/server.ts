@@ -2916,6 +2916,19 @@ app.get('/api/v1/founder-chat/stats', async (req: Request, res: Response) => {
   }
 });
 
+// Get funnel metrics - proxy to Piklaw API
+app.get('/api/v1/funnel/metrics', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${FOUNDER_CHAT_API}/api/v1/funnel/metrics`);
+    const data = await response.json() as Record<string, unknown>;
+    
+    res.json(data);
+  } catch (err) {
+    console.error('Error getting funnel metrics:', err);
+    res.status(500).json({ success: false, error: 'Failed to get funnel metrics' });
+  }
+});
+
 // Generate debate challenge
 app.get('/api/v1/founder-chat/challenge', async (req: Request, res: Response) => {
   try {

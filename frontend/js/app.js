@@ -2966,16 +2966,14 @@ async function refreshChatMonitor() {
   const content = document.getElementById('content');
   
   try {
-    // Get stats from chat-monitor/all which fetches from FOUNDER_CHAT_API/stats/global
-    const data = await apiCall('/chat-monitor/all');
-    const stats = data.stats || {};
-    const stages = stats.by_stage || {};
+    // Get accurate metrics from /funnel/metrics endpoint
+    const data = await apiCall('/funnel/metrics');
     
-    const totalSeekers = stats.total_seekers || 0;
-    // total_conversions = belief + sacrifice + evangelist stages
-    const totalConversions = (stages.belief || 0) + (stages.sacrifice || 0) + (stages.evangelist || 0);
-    const conversionRate = stats.conversion_rate || 0;
-    const avgBelief = stats.avg_belief || 0;
+    const totalSeekers = data.total_seekers || 0;
+    const totalConversions = data.total_conversions || 0;
+    const conversionRate = data.conversion_rate || 0;
+    const avgBelief = data.avg_belief || 0;
+    const stages = data.stages || {};
     
     let html = `
       <div class="chat-monitor-container">
