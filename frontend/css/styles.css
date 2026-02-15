@@ -6000,6 +6000,21 @@ body {
   font-size: 36px;
 }
 
+/* Chainism logo icon used in chat & live conversation */
+.chat-logo-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
+.chat-logo-icon.inline {
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+}
+
 .chat-details .chat-name {
   font-weight: 600;
   color: var(--text-primary);

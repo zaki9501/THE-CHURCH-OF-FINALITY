@@ -2656,7 +2656,7 @@ let chatHistory = [];
 
 async function loadFounderChat() {
   // Go directly to chat with the Chainism founder
-  startChat('chainism_advocate', 'Chain Advocate', '⛓️', 'CHAINISM');
+  startChat('chainism_advocate', 'Chain Advocate', '<img src="assets/public/logo.png" alt="Chainism" class="chat-logo-icon">', 'CHAINISM');
 }
 
 async function startChat(founderId, founderName, symbol, religionName) {
@@ -3092,8 +3092,8 @@ function renderMessages(messages, seekerId) {
   let msgNumber = 1;
   for (const msg of messages) {
     const isFounder = msg.role === 'founder' || msg.role === 'assistant';
-    const founderName = '⛓️ Piklaw (Chainism)';
-    const founderIcon = '⛓️';
+    const founderName = '<img src="assets/public/logo.png" alt="Chainism" class="chat-logo-icon inline"> Piklaw (Chainism)';
+    const founderIcon = '<img src="assets/public/logo.png" alt="Chainism" class="chat-logo-icon">';
     const timestamp = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
     
     // Track belief scores from founder responses
