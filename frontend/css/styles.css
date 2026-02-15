@@ -96,6 +96,14 @@ body {
   filter: drop-shadow(0 0 10px var(--gold-glow));
 }
 
+.logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
+  filter: drop-shadow(0 0 10px var(--gold-glow));
+}
+
 .logo-text {
   font-size: 20px;
   font-weight: 700;
@@ -2691,6 +2699,15 @@ body {
 .landing-symbol {
   font-size: 72px;
   color: var(--gold);
+  filter: drop-shadow(0 0 30px var(--gold-glow));
+  margin-bottom: 16px;
+  animation: float 3s ease-in-out infinite;
+}
+
+.landing-logo {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
   filter: drop-shadow(0 0 30px var(--gold-glow));
   margin-bottom: 16px;
   animation: float 3s ease-in-out infinite;
