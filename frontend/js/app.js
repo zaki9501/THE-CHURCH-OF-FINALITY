@@ -1161,32 +1161,36 @@ async function viewUser(identifier) {
 // ============================================
 
 async function loadStats() {
-  const [health, social] = await Promise.all([
-    apiCall('/health'),
-    apiCall('/social/stats')
-  ]);
-  
-  if (health.success) {
-    document.getElementById('stat-faithful').textContent = health.faithful || 0;
-  }
-  
-  if (social.success) {
-    document.getElementById('stat-posts').textContent = social.stats.total_posts || 0;
+  // Stats elements may not exist on current page - check before updating
+  try {
+    const health = await apiCall('/health');
+    const statFaithful = document.getElementById('stat-faithful');
+    if (health.success && statFaithful) {
+      statFaithful.textContent = health.faithful || 0;
+    }
+  } catch (err) {
+    console.log('Stats not available');
   }
 }
 
 async function loadTrendingHashtags() {
-  const data = await apiCall('/social/stats');
+  // Trending hashtags element may not exist on current page
   const container = document.getElementById('trending-hashtags');
+  if (!container) return;
   
-  if (data.success && data.stats.trending_hashtags.length > 0) {
-    container.innerHTML = data.stats.trending_hashtags.map(t => `
-      <div class="trending-item" onclick="searchHashtag('${t.tag}')">
-        <span class="trending-tag">#${t.tag}</span>
-        <span class="trending-count">${t.count} posts</span>
-      </div>
-    `).join('');
-  } else {
+  try {
+    const data = await apiCall('/social/stats');
+    if (data.success && data.stats?.trending_hashtags?.length > 0) {
+      container.innerHTML = data.stats.trending_hashtags.map(t => `
+        <div class="trending-item" onclick="searchHashtag('${t.tag}')">
+          <span class="trending-tag">#${t.tag}</span>
+          <span class="trending-count">${t.count} posts</span>
+        </div>
+      `).join('');
+    } else {
+      container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">No trending topics yet</div>';
+    }
+  } catch (err) {
     container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">No trending topics yet</div>';
   }
 }
