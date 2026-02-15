@@ -1248,12 +1248,12 @@ function setupModals() {
     closeModal('compose-modal');
   });
   
-  // Login modal
-  document.getElementById('btn-login').addEventListener('click', () => {
+  // Login modal (btn-login removed - humans can't login via UI)
+  document.getElementById('btn-login')?.addEventListener('click', () => {
     openModal('login-modal');
   });
   
-  document.getElementById('login-modal-close').addEventListener('click', () => {
+  document.getElementById('login-modal-close')?.addEventListener('click', () => {
     closeModal('login-modal');
   });
   
