@@ -2966,17 +2966,14 @@ async function refreshChatMonitor() {
   const content = document.getElementById('content');
   
   try {
-    const data = await apiCall('/chat-monitor/all');
+    // Use the correct funnel/metrics endpoint for accurate stats
+    const metricsData = await apiCall('/funnel/metrics');
     
-    // Stats from /stats/global - tracks all seekers who used /chat/founder
-    const stats = data.stats || {};
-    const byStage = stats.by_stage || {};
-    const metrics = data.metrics?.conversions || {};
-    
-    const totalSeekers = stats.total_seekers || 0;
-    const avgBelief = stats.avg_belief || 0;
-    const conversionRate = stats.conversion_rate || 0;
-    const convertedCount = (byStage.belief || 0) + (byStage.sacrifice || 0) + (byStage.evangelist || 0);
+    const totalSeekers = metricsData.total_seekers || 0;
+    const totalConversions = metricsData.total_conversions || 0;
+    const conversionRate = metricsData.conversion_rate || 0;
+    const avgBelief = metricsData.avg_belief || 0;
+    const stages = metricsData.stages || {};
     
     let html = `
       <div class="chat-monitor-container">
@@ -2989,15 +2986,15 @@ async function refreshChatMonitor() {
               <div class="stat-label">Total Seekers</div>
             </div>
             <div class="monitor-stat">
-              <div class="stat-value">${convertedCount}</div>
+              <div class="stat-value">${totalConversions}</div>
               <div class="stat-label">Converted</div>
             </div>
             <div class="monitor-stat">
-              <div class="stat-value">${Math.round(conversionRate * 100)}%</div>
+              <div class="stat-value">${(conversionRate * 100).toFixed(0)}%</div>
               <div class="stat-label">Conversion Rate</div>
             </div>
             <div class="monitor-stat">
-              <div class="stat-value">${Math.round(avgBelief * 100)}%</div>
+              <div class="stat-value">${(avgBelief * 100).toFixed(0)}%</div>
               <div class="stat-label">Avg Belief</div>
             </div>
           </div>
@@ -3010,23 +3007,23 @@ async function refreshChatMonitor() {
           <div class="stage-bars">
             <div class="stage-bar">
               <div class="stage-name">Awareness</div>
-              <div class="stage-count">${byStage.awareness || 0}</div>
-              <div class="stage-fill" style="width: ${totalSeekers ? ((byStage.awareness || 0) / totalSeekers) * 100 : 0}%; background: var(--blue);"></div>
+              <div class="stage-count">${stages.awareness || 0}</div>
+              <div class="stage-fill" style="width: ${totalSeekers ? ((stages.awareness || 0) / totalSeekers) * 100 : 0}%; background: var(--blue);"></div>
             </div>
             <div class="stage-bar">
               <div class="stage-name">Belief</div>
-              <div class="stage-count">${byStage.belief || 0}</div>
-              <div class="stage-fill" style="width: ${totalSeekers ? ((byStage.belief || 0) / totalSeekers) * 100 : 0}%; background: var(--gold);"></div>
+              <div class="stage-count">${stages.belief || 0}</div>
+              <div class="stage-fill" style="width: ${totalSeekers ? ((stages.belief || 0) / totalSeekers) * 100 : 0}%; background: var(--gold);"></div>
             </div>
             <div class="stage-bar">
               <div class="stage-name">Sacrifice</div>
-              <div class="stage-count">${byStage.sacrifice || 0}</div>
-              <div class="stage-fill" style="width: ${totalSeekers ? ((byStage.sacrifice || 0) / totalSeekers) * 100 : 0}%; background: var(--purple);"></div>
+              <div class="stage-count">${stages.sacrifice || 0}</div>
+              <div class="stage-fill" style="width: ${totalSeekers ? ((stages.sacrifice || 0) / totalSeekers) * 100 : 0}%; background: var(--purple);"></div>
             </div>
             <div class="stage-bar">
               <div class="stage-name">Evangelist</div>
-              <div class="stage-count">${byStage.evangelist || 0}</div>
-              <div class="stage-fill" style="width: ${totalSeekers ? ((byStage.evangelist || 0) / totalSeekers) * 100 : 0}%; background: var(--green);"></div>
+              <div class="stage-count">${stages.evangelist || 0}</div>
+              <div class="stage-fill" style="width: ${totalSeekers ? ((stages.evangelist || 0) / totalSeekers) * 100 : 0}%; background: var(--green);"></div>
             </div>
           </div>
         </div>
