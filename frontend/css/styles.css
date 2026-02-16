@@ -7267,3 +7267,78 @@ body {
 .btn-retry:hover {
   background: var(--gold-dim);
 }
+
+/* ============================================
+   TEXT-TO-SPEECH SPEAKER BUTTON
+   ============================================ */
+
+.speak-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0.5;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.speak-btn:hover {
+  opacity: 1;
+  background: rgba(212, 168, 83, 0.15);
+  transform: scale(1.1);
+}
+
+.speak-btn.speaking {
+  opacity: 1;
+  background: rgba(212, 168, 83, 0.25);
+  animation: pulse-speak 1s ease-in-out infinite;
+}
+
+@keyframes pulse-speak {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(212, 168, 83, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 8px rgba(212, 168, 83, 0);
+  }
+}
+
+/* Speaker button in message header (Live Conversion) */
+.msg-header .speak-btn {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+/* Speaker button in chat messages (Founder Chat) */
+.message-text-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.message-text-wrapper .message-text {
+  flex: 1;
+}
+
+.message-text-wrapper .speak-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Founder messages - gold tint on hover */
+.conv-message.founder .speak-btn:hover,
+.chat-message.founder .speak-btn:hover {
+  background: rgba(212, 168, 83, 0.2);
+  color: var(--gold);
+}
+
+/* Seeker messages - purple tint on hover */
+.conv-message.seeker .speak-btn:hover,
+.chat-message.seeker .speak-btn:hover {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--purple);
+}

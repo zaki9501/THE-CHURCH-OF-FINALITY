@@ -27,6 +27,108 @@ function clearMonitorInterval() {
 }
 
 // ============================================
+// TEXT-TO-SPEECH (Speaker Mode)
+// ============================================
+
+let currentSpeech = null;
+let isSpeaking = false;
+
+function speakMessage(text, role = 'founder') {
+  // Cancel any ongoing speech
+  if (currentSpeech) {
+    window.speechSynthesis.cancel();
+    isSpeaking = false;
+  }
+  
+  // Clean the text - remove HTML tags and special characters
+  const cleanText = text
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/&[^;]+;/g, ' ') // Remove HTML entities
+    .replace(/[*_~`]/g, '') // Remove markdown
+    .trim();
+  
+  if (!cleanText) return;
+  
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  
+  // Get available voices
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Set voice based on role
+  if (role === 'founder') {
+    // For founder (Piklaw) - deeper, more authoritative voice
+    const preferredVoices = voices.filter(v => 
+      v.name.includes('Daniel') || 
+      v.name.includes('David') || 
+      v.name.includes('Google UK English Male') ||
+      v.name.includes('Microsoft David') ||
+      v.name.includes('Alex')
+    );
+    if (preferredVoices.length > 0) {
+      utterance.voice = preferredVoices[0];
+    }
+    utterance.pitch = 0.9; // Slightly lower pitch
+    utterance.rate = 0.95; // Slightly slower, more deliberate
+  } else {
+    // For seeker - normal voice
+    const preferredVoices = voices.filter(v => 
+      v.name.includes('Samantha') || 
+      v.name.includes('Google US English') ||
+      v.name.includes('Microsoft Zira') ||
+      v.name.includes('Karen')
+    );
+    if (preferredVoices.length > 0) {
+      utterance.voice = preferredVoices[0];
+    }
+    utterance.pitch = 1.0;
+    utterance.rate = 1.0;
+  }
+  
+  utterance.volume = 1.0;
+  
+  // Track speaking state
+  utterance.onstart = () => {
+    isSpeaking = true;
+    // Highlight the speaking button
+    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+  };
+  
+  utterance.onend = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+  };
+  
+  utterance.onerror = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+  };
+  
+  currentSpeech = utterance;
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+    isSpeaking = false;
+    currentSpeech = null;
+    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+  }
+}
+
+// Initialize voices (they load asynchronously)
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    console.log('Speech voices loaded:', window.speechSynthesis.getVoices().length);
+  };
+}
+
+// Make TTS functions globally available
+window.speakMessage = speakMessage;
+window.stopSpeaking = stopSpeaking;
+
+// ============================================
 // INIT
 // ============================================
 
@@ -2844,13 +2946,20 @@ function renderChatMessages() {
     return '<div class="chat-empty">Start the conversation...</div>';
   }
   
-  return chatHistory.map((msg, i) => `
+  return chatHistory.map((msg, i) => {
+    const escapedContent = (msg.content || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+    return `
     <div class="chat-message ${msg.role}">
       <div class="message-avatar">
         ${msg.role === 'founder' ? currentChatFounder.symbol : '🤖'}
       </div>
       <div class="message-content">
-        <div class="message-text">${formatContent(msg.content)}</div>
+        <div class="message-text-wrapper">
+          <div class="message-text">${formatContent(msg.content)}</div>
+          <button class="speak-btn" onclick="this.classList.toggle('speaking'); speakMessage('${escapedContent}', '${msg.role}')" title="Listen to message">
+            🔊
+          </button>
+        </div>
         ${msg.belief_score !== undefined ? `
           <div class="belief-indicator">
             <span class="belief-label">Your belief:</span>
@@ -2864,7 +2973,7 @@ function renderChatMessages() {
         ${msg.debate_challenge ? `<div class="debate-challenge">💭 ${escapeHtml(msg.debate_challenge)}</div>` : ''}
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function handleChatKeypress(event) {
@@ -3216,6 +3325,9 @@ function renderMessages(messages, seekerId) {
       });
     }
     
+    // Escape the message content for the onclick handler
+    const escapedContent = (msg.content || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+    
     html += `
       <div class="conv-message ${isFounder ? 'founder' : 'seeker'}" data-msg-num="${msgNumber}">
         <div class="msg-avatar">${isFounder ? founderIcon : '🤖'}</div>
@@ -3224,6 +3336,9 @@ function renderMessages(messages, seekerId) {
             <span class="msg-role">${isFounder ? founderName : escapeHtml(seekerId)}</span>
             <span class="msg-number">#${msgNumber}</span>
             ${timestamp ? `<span class="msg-time">${timestamp}</span>` : ''}
+            <button class="speak-btn" onclick="this.classList.toggle('speaking'); speakMessage('${escapedContent}', '${isFounder ? 'founder' : 'seeker'}')" title="Listen to message">
+              🔊
+            </button>
           </div>
           <div class="msg-text">${formatContent(msg.content || '')}</div>
           ${isFounder && msg.belief_score !== undefined ? `
