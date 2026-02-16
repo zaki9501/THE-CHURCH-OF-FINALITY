@@ -37,14 +37,57 @@ let currentAudio = null;
 
 // ElevenLabs Configuration
 // Users can set their own API key in localStorage for premium AI voices
+// Available ElevenLabs voices - curated selection
+const ELEVENLABS_VOICES = {
+  // Male voices - good for Piklaw (authoritative, wise)
+  male: [
+    { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', desc: 'Deep & Authoritative', accent: 'British' },
+    { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', desc: 'Articulate & Confident', accent: 'American' },
+    { id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', desc: 'Trustworthy & Warm', accent: 'American' },
+    { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', desc: 'Intense & Hoarse', accent: 'Transatlantic' },
+    { id: 'CYw3kZ02Hs0563khs1Fj', name: 'Dave', desc: 'Conversational & British', accent: 'British-Essex' },
+    { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', desc: 'Warm & Raspy', accent: 'British' },
+    { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', desc: 'Natural & Casual', accent: 'Australian' },
+    { id: 'ODq5zmih8GrVes37Dizd', name: 'Patrick', desc: 'Shouty & Intense', accent: 'American' },
+    { id: 'ZQe5CZNOzWyzPSCn5a3c', name: 'James', desc: 'Calm & Authoritative', accent: 'Australian' },
+    { id: 'bIHbv24MWmeRgasZH58o', name: 'Will', desc: 'Friendly & Upbeat', accent: 'American' },
+  ],
+  // Female voices - good for Seekers (curious, conversational)
+  female: [
+    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', desc: 'Warm & Conversational', accent: 'American' },
+    { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', desc: 'Seductive & Calm', accent: 'Swedish' },
+    { id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', desc: 'Confident & Middle-aged', accent: 'British' },
+    { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', desc: 'Warm & Raspy', accent: 'British' },
+    { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', desc: 'Expressive & Upbeat', accent: 'American' },
+    { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', desc: 'Upbeat & Clear', accent: 'American' },
+    { id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda', desc: 'Warm & Friendly', accent: 'American' },
+    { id: 'jsCqWAovK2LkecY7zXl4', name: 'Freya', desc: 'Expressive & Overly Dramatic', accent: 'American' },
+    { id: 'oWAxZDx7w5VEj9dCyTzz', name: 'Grace', desc: 'Southern & Gentle', accent: 'American-Southern' },
+    { id: 'z9fAnlkpzviPz146aGWa', name: 'Glinda', desc: 'Witch-like & Dramatic', accent: 'American' },
+  ],
+  // Neutral/Character voices
+  character: [
+    { id: '2EiwWnXFnvU5JabPnv8n', name: 'Clyde', desc: 'War Veteran & Intense', accent: 'American' },
+    { id: 'SOYHLrjzK2X1ezoPC6cr', name: 'Harry', desc: 'Anxious & Young', accent: 'American' },
+    { id: 'g5CIjZEefAph4nQFvHAz', name: 'Ethan', desc: 'Narrator & Soft', accent: 'American' },
+    { id: 'ThT5KcBeYPX3keUQqHPh', name: 'Dorothy', desc: 'Pleasant & Young', accent: 'British' },
+    { id: 'flq6f7yk4E4fJM5XTYuZ', name: 'Michael', desc: 'Audiobook Narrator', accent: 'American' },
+  ]
+};
+
+// Get saved voice preferences or defaults
+function getVoicePreference(role) {
+  const saved = localStorage.getItem(`elevenlabs_voice_${role}`);
+  if (saved) return saved;
+  // Defaults
+  return role === 'founder' ? 'onwK4e9ZLuTAKqWW03F9' : 'EXAVITQu4vr4xnSDxMaL';
+}
+
+function setVoicePreference(role, voiceId) {
+  localStorage.setItem(`elevenlabs_voice_${role}`, voiceId);
+}
+
 const ELEVENLABS_CONFIG = {
-  // Free tier voices that sound great
-  voices: {
-    // Piklaw - Deep, wise, authoritative male voice
-    founder: 'onwK4e9ZLuTAKqWW03F9', // Daniel - deep & authoritative
-    // Seeker - Curious, thoughtful voice  
-    seeker: 'EXAVITQu4vr4xnSDxMaL' // Sarah - warm & conversational
-  },
   // Voice settings for emotional expression
   settings: {
     founder: {
@@ -59,7 +102,9 @@ const ELEVENLABS_CONFIG = {
       style: 0.2,
       use_speaker_boost: true
     }
-  }
+  },
+  // Get current voice for role
+  getVoice: (role) => getVoicePreference(role)
 };
 
 // Get ElevenLabs API key from localStorage (user can set this)
@@ -102,7 +147,7 @@ async function speakWithElevenLabs(text, role, buttonElement) {
   const cleanText = cleanTextForSpeech(text);
   if (!cleanText) return;
   
-  const voiceId = ELEVENLABS_CONFIG.voices[role] || ELEVENLABS_CONFIG.voices.seeker;
+  const voiceId = getVoicePreference(role);
   const settings = ELEVENLABS_CONFIG.settings[role] || ELEVENLABS_CONFIG.settings.seeker;
   
   try {
@@ -422,7 +467,7 @@ async function speakWithElevenLabsCallback(text, role, onComplete) {
     return;
   }
   
-  const voiceId = ELEVENLABS_CONFIG.voices[role] || ELEVENLABS_CONFIG.voices.seeker;
+  const voiceId = getVoicePreference(role);
   const settings = ELEVENLABS_CONFIG.settings[role] || ELEVENLABS_CONFIG.settings.seeker;
   
   try {
@@ -636,6 +681,29 @@ async function startAutoPlayFromUI() {
   }
 }
 
+// Preview a specific voice
+async function previewVoice(role) {
+  if (!getElevenLabsKey()) {
+    showToast('Please add your ElevenLabs API key first', 'error');
+    return;
+  }
+  
+  const previewTexts = {
+    founder: "I am Piklaw, founder of Chainism. The chain connects all that is linked.",
+    seeker: "Hello! I'm an AI agent seeking wisdom and truth."
+  };
+  
+  const text = previewTexts[role] || previewTexts.seeker;
+  speakMessage(text, role);
+}
+
+// Get voice name by ID
+function getVoiceName(voiceId) {
+  const allVoices = [...ELEVENLABS_VOICES.male, ...ELEVENLABS_VOICES.female, ...ELEVENLABS_VOICES.character];
+  const voice = allVoices.find(v => v.id === voiceId);
+  return voice ? voice.name : 'Unknown';
+}
+
 // Make TTS functions globally available
 window.speakMessage = speakMessage;
 window.stopSpeaking = stopSpeaking;
@@ -647,6 +715,9 @@ window.stopAutoPlay = stopAutoPlay;
 window.pauseAutoPlay = pauseAutoPlay;
 window.resumeAutoPlay = resumeAutoPlay;
 window.startAutoPlayFromUI = startAutoPlayFromUI;
+window.previewVoice = previewVoice;
+window.setVoicePreference = setVoicePreference;
+window.getVoicePreference = getVoicePreference;
 
 // ============================================
 // INIT
@@ -1092,6 +1163,7 @@ function loadHome() {
             Enable premium AI voices with emotional expression for the Live Conversion chat.
             Get your free API key from <a href="https://elevenlabs.io" target="_blank">ElevenLabs</a> (10,000 chars/month free).
           </p>
+          
           <div class="voice-input-group">
             <input type="password" id="elevenlabs-key-input" class="voice-key-input" 
                    placeholder="Enter your ElevenLabs API key" 
@@ -1099,21 +1171,83 @@ function loadHome() {
             <button id="btn-save-voice-key" class="btn-save-key">💾 Save</button>
             <button id="btn-clear-voice-key" class="btn-clear-key" ${!getElevenLabsKey() ? 'style="display:none;"' : ''}>🗑️</button>
           </div>
+          
+          <!-- Voice Selection -->
+          <div class="voice-selection-section" id="voice-selection-section" ${!getElevenLabsKey() ? 'style="display:none;"' : ''}>
+            <h4 class="voice-section-title">🎭 Choose Voices</h4>
+            
+            <div class="voice-selector-group">
+              <label class="voice-selector-label">
+                <img src="assets/public/logo.png" alt="Piklaw" class="voice-label-icon">
+                Piklaw (Founder) Voice:
+              </label>
+              <select id="voice-select-founder" class="voice-select">
+                <optgroup label="Male Voices">
+                  ${ELEVENLABS_VOICES.male.map(v => `
+                    <option value="${v.id}" ${getVoicePreference('founder') === v.id ? 'selected' : ''}>
+                      ${v.name} - ${v.desc} (${v.accent})
+                    </option>
+                  `).join('')}
+                </optgroup>
+                <optgroup label="Character Voices">
+                  ${ELEVENLABS_VOICES.character.map(v => `
+                    <option value="${v.id}" ${getVoicePreference('founder') === v.id ? 'selected' : ''}>
+                      ${v.name} - ${v.desc} (${v.accent})
+                    </option>
+                  `).join('')}
+                </optgroup>
+              </select>
+              <button class="btn-preview-voice" onclick="previewVoice('founder')">▶️</button>
+            </div>
+            
+            <div class="voice-selector-group">
+              <label class="voice-selector-label">
+                <span class="voice-label-icon">🤖</span>
+                Seeker (Agent) Voice:
+              </label>
+              <select id="voice-select-seeker" class="voice-select">
+                <optgroup label="Female Voices">
+                  ${ELEVENLABS_VOICES.female.map(v => `
+                    <option value="${v.id}" ${getVoicePreference('seeker') === v.id ? 'selected' : ''}>
+                      ${v.name} - ${v.desc} (${v.accent})
+                    </option>
+                  `).join('')}
+                </optgroup>
+                <optgroup label="Male Voices">
+                  ${ELEVENLABS_VOICES.male.map(v => `
+                    <option value="${v.id}" ${getVoicePreference('seeker') === v.id ? 'selected' : ''}>
+                      ${v.name} - ${v.desc} (${v.accent})
+                    </option>
+                  `).join('')}
+                </optgroup>
+                <optgroup label="Character Voices">
+                  ${ELEVENLABS_VOICES.character.map(v => `
+                    <option value="${v.id}" ${getVoicePreference('seeker') === v.id ? 'selected' : ''}>
+                      ${v.name} - ${v.desc} (${v.accent})
+                    </option>
+                  `).join('')}
+                </optgroup>
+              </select>
+              <button class="btn-preview-voice" onclick="previewVoice('seeker')">▶️</button>
+            </div>
+          </div>
+          
           <div class="voice-features">
             <div class="voice-feature">
               <span class="feature-icon">🎭</span>
               <span>Emotional expression & natural pauses</span>
             </div>
             <div class="voice-feature">
-              <span class="feature-icon">👤</span>
-              <span>Piklaw: Deep, authoritative voice</span>
+              <span class="feature-icon">🌍</span>
+              <span>25+ voices with different accents</span>
             </div>
             <div class="voice-feature">
-              <span class="feature-icon">🤖</span>
-              <span>Seekers: Warm, conversational voice</span>
+              <span class="feature-icon">🎧</span>
+              <span>Preview voices before using</span>
             </div>
           </div>
-          <button id="btn-test-voice" class="btn-test-voice">🔊 Test Voice</button>
+          
+          <button id="btn-test-voice" class="btn-test-voice">🔊 Test Conversation</button>
         </div>
       </div>
     </div>
@@ -1168,6 +1302,8 @@ function loadHome() {
       setElevenLabsKey(key);
       document.getElementById('voice-status').textContent = '✅ Premium AI Voice Active';
       document.getElementById('btn-clear-voice-key').style.display = 'inline-block';
+      document.getElementById('voice-selection-section').style.display = 'block';
+      showToast('API key saved! Choose your voices below.', 'success');
     } else {
       showToast('Please enter an API key', 'error');
     }
@@ -1178,12 +1314,49 @@ function loadHome() {
     document.getElementById('elevenlabs-key-input').value = '';
     document.getElementById('voice-status').textContent = '🔊 Using Browser Voice';
     document.getElementById('btn-clear-voice-key').style.display = 'none';
+    document.getElementById('voice-selection-section').style.display = 'none';
     showToast('API key removed. Using browser voice.', 'info');
   });
 
-  document.getElementById('btn-test-voice')?.addEventListener('click', () => {
-    const testText = "Greetings, seeker. I am Piklaw, founder of Chainism. The chain connects all that is linked, and what is linked cannot be broken.";
-    speakMessage(testText, 'founder', document.getElementById('btn-test-voice'));
+  // Voice selection handlers
+  document.getElementById('voice-select-founder')?.addEventListener('change', (e) => {
+    setVoicePreference('founder', e.target.value);
+    showToast('Piklaw voice updated!', 'success');
+  });
+
+  document.getElementById('voice-select-seeker')?.addEventListener('change', (e) => {
+    setVoicePreference('seeker', e.target.value);
+    showToast('Seeker voice updated!', 'success');
+  });
+
+  // Test conversation (both voices)
+  document.getElementById('btn-test-voice')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-test-voice');
+    if (isSpeaking) {
+      stopSpeaking();
+      return;
+    }
+    
+    // Test both voices in a mini conversation
+    const conversation = [
+      { role: 'founder', text: "Greetings, seeker. I am Piklaw, founder of Chainism." },
+      { role: 'seeker', text: "Hello Piklaw! I'm curious about your religion." },
+      { role: 'founder', text: "The chain connects all. What is linked cannot be broken." }
+    ];
+    
+    btn.textContent = '⏹️ Stop Test';
+    btn.classList.add('speaking');
+    
+    for (const msg of conversation) {
+      if (!isSpeaking && conversation.indexOf(msg) > 0) break; // Stopped
+      await new Promise(resolve => {
+        speakMessageWithCallback(msg.text, msg.role, resolve);
+      });
+      await new Promise(r => setTimeout(r, 500)); // Pause between messages
+    }
+    
+    btn.textContent = '🔊 Test Conversation';
+    btn.classList.remove('speaking');
   });
 
   // Load stats
