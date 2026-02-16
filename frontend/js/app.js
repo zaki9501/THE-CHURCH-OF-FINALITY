@@ -344,12 +344,309 @@ function toggleVoiceSettings() {
   }
 }
 
+// ============================================
+// AUTO-PLAY CONVERSATION (Podcast Mode)
+// ============================================
+
+async function startAutoPlay(messages, seekerId, startIndex = 0) {
+  // Stop any existing playback
+  stopAutoPlay();
+  
+  if (!messages || messages.length === 0) {
+    showToast('No messages to play', 'error');
+    return;
+  }
+  
+  autoPlayActive = true;
+  autoPlayMessages = messages;
+  autoPlayIndex = startIndex;
+  autoPlaySeekerId = seekerId;
+  
+  // Update UI
+  updateAutoPlayUI(true);
+  
+  // Start playing
+  await playNextMessage();
+}
+
+async function playNextMessage() {
+  if (!autoPlayActive || autoPlayIndex >= autoPlayMessages.length) {
+    // Finished playing all messages
+    stopAutoPlay();
+    showToast('🎙️ Conversation playback complete!', 'success');
+    return;
+  }
+  
+  const msg = autoPlayMessages[autoPlayIndex];
+  const isFounder = msg.role === 'founder' || msg.role === 'assistant';
+  const role = isFounder ? 'founder' : 'seeker';
+  const content = msg.content || '';
+  
+  // Highlight current message
+  highlightCurrentMessage(autoPlayIndex + 1); // +1 because msg numbers start at 1
+  
+  // Update progress
+  updateAutoPlayProgress();
+  
+  // Speak the message
+  await speakMessageWithCallback(content, role, () => {
+    // When done speaking, play next message after a short pause
+    if (autoPlayActive) {
+      autoPlayIndex++;
+      setTimeout(() => {
+        playNextMessage();
+      }, 800); // 800ms pause between messages
+    }
+  });
+}
+
+async function speakMessageWithCallback(text, role, onComplete) {
+  const cleanText = cleanTextForSpeech(text);
+  if (!cleanText) {
+    onComplete();
+    return;
+  }
+  
+  // Use ElevenLabs if available
+  if (getElevenLabsKey()) {
+    await speakWithElevenLabsCallback(cleanText, role, onComplete);
+  } else {
+    speakWithBrowserTTSCallback(cleanText, role, onComplete);
+  }
+}
+
+async function speakWithElevenLabsCallback(text, role, onComplete) {
+  const apiKey = getElevenLabsKey();
+  if (!apiKey) {
+    speakWithBrowserTTSCallback(text, role, onComplete);
+    return;
+  }
+  
+  const voiceId = ELEVENLABS_CONFIG.voices[role] || ELEVENLABS_CONFIG.voices.seeker;
+  const settings = ELEVENLABS_CONFIG.settings[role] || ELEVENLABS_CONFIG.settings.seeker;
+  
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: settings
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`ElevenLabs error: ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    
+    currentAudio = new Audio(audioUrl);
+    isSpeaking = true;
+    
+    currentAudio.onended = () => {
+      isSpeaking = false;
+      currentAudio = null;
+      URL.revokeObjectURL(audioUrl);
+      onComplete();
+    };
+    
+    currentAudio.onerror = () => {
+      isSpeaking = false;
+      currentAudio = null;
+      onComplete();
+    };
+    
+    await currentAudio.play();
+    
+  } catch (err) {
+    console.error('ElevenLabs auto-play error:', err);
+    speakWithBrowserTTSCallback(text, role, onComplete);
+  }
+}
+
+function speakWithBrowserTTSCallback(text, role, onComplete) {
+  // Add natural pauses
+  let processedText = text
+    .replace(/\.\s+/g, '. ... ')
+    .replace(/!\s+/g, '! ... ')
+    .replace(/\?\s+/g, '? ... ');
+  
+  const utterance = new SpeechSynthesisUtterance(processedText);
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Find best voice
+  const preferredVoices = role === 'founder' 
+    ? ['Daniel', 'Aaron', 'Microsoft Guy', 'Google UK English Male', 'Alex']
+    : ['Samantha', 'Microsoft Aria', 'Google US English', 'Karen'];
+  
+  for (const name of preferredVoices) {
+    const voice = voices.find(v => v.name.includes(name));
+    if (voice) {
+      utterance.voice = voice;
+      break;
+    }
+  }
+  
+  // Voice settings
+  if (role === 'founder') {
+    utterance.pitch = 0.85;
+    utterance.rate = 0.88;
+  } else {
+    utterance.pitch = 1.05;
+    utterance.rate = 1.0;
+  }
+  
+  utterance.volume = 1.0;
+  isSpeaking = true;
+  
+  utterance.onend = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+    onComplete();
+  };
+  
+  utterance.onerror = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+    onComplete();
+  };
+  
+  currentSpeech = utterance;
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopAutoPlay() {
+  autoPlayActive = false;
+  autoPlayMessages = [];
+  autoPlayIndex = 0;
+  autoPlaySeekerId = null;
+  
+  // Stop any current speech
+  stopSpeaking();
+  
+  // Update UI
+  updateAutoPlayUI(false);
+  
+  // Remove highlight
+  document.querySelectorAll('.conv-message.playing').forEach(el => {
+    el.classList.remove('playing');
+  });
+}
+
+function pauseAutoPlay() {
+  if (autoPlayActive) {
+    autoPlayActive = false;
+    stopSpeaking();
+    updateAutoPlayUI(false, true); // paused state
+  }
+}
+
+function resumeAutoPlay() {
+  if (autoPlayMessages.length > 0 && !autoPlayActive) {
+    autoPlayActive = true;
+    updateAutoPlayUI(true);
+    playNextMessage();
+  }
+}
+
+function highlightCurrentMessage(msgNumber) {
+  // Remove previous highlight
+  document.querySelectorAll('.conv-message.playing').forEach(el => {
+    el.classList.remove('playing');
+  });
+  
+  // Add highlight to current message
+  const currentMsg = document.querySelector(`.conv-message[data-msg-num="${msgNumber}"]`);
+  if (currentMsg) {
+    currentMsg.classList.add('playing');
+    currentMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+function updateAutoPlayProgress() {
+  const progressEl = document.getElementById('autoplay-progress');
+  if (progressEl) {
+    progressEl.textContent = `${autoPlayIndex + 1} / ${autoPlayMessages.length}`;
+  }
+  
+  const progressBar = document.getElementById('autoplay-progress-bar');
+  if (progressBar) {
+    const percent = ((autoPlayIndex + 1) / autoPlayMessages.length) * 100;
+    progressBar.style.width = `${percent}%`;
+  }
+}
+
+function updateAutoPlayUI(isPlaying, isPaused = false) {
+  const playBtn = document.getElementById('btn-autoplay');
+  const stopBtn = document.getElementById('btn-stop-autoplay');
+  const controlsEl = document.getElementById('autoplay-controls');
+  
+  if (playBtn) {
+    if (isPlaying) {
+      playBtn.innerHTML = '⏸️ Pause';
+      playBtn.onclick = pauseAutoPlay;
+      playBtn.classList.add('playing');
+    } else if (isPaused) {
+      playBtn.innerHTML = '▶️ Resume';
+      playBtn.onclick = resumeAutoPlay;
+      playBtn.classList.remove('playing');
+    } else {
+      playBtn.innerHTML = '▶️ Play All';
+      playBtn.onclick = () => startAutoPlayFromUI();
+      playBtn.classList.remove('playing');
+    }
+  }
+  
+  if (stopBtn) {
+    stopBtn.style.display = isPlaying || isPaused ? 'inline-flex' : 'none';
+  }
+  
+  if (controlsEl) {
+    controlsEl.classList.toggle('active', isPlaying || isPaused);
+  }
+}
+
+async function startAutoPlayFromUI() {
+  // Get messages from the current conversation view
+  if (!currentConversationSeekerId) {
+    showToast('No conversation loaded', 'error');
+    return;
+  }
+  
+  try {
+    const data = await apiCall(`/chat-monitor/conversation/${encodeURIComponent(currentConversationSeekerId)}`);
+    const messages = data.messages || data.history || [];
+    
+    if (messages.length === 0) {
+      showToast('No messages to play', 'error');
+      return;
+    }
+    
+    startAutoPlay(messages, currentConversationSeekerId);
+  } catch (err) {
+    console.error('Error starting auto-play:', err);
+    showToast('Failed to load messages', 'error');
+  }
+}
+
 // Make TTS functions globally available
 window.speakMessage = speakMessage;
 window.stopSpeaking = stopSpeaking;
 window.setElevenLabsKey = setElevenLabsKey;
 window.getElevenLabsKey = getElevenLabsKey;
 window.toggleVoiceSettings = toggleVoiceSettings;
+window.startAutoPlay = startAutoPlay;
+window.stopAutoPlay = stopAutoPlay;
+window.pauseAutoPlay = pauseAutoPlay;
+window.resumeAutoPlay = resumeAutoPlay;
+window.startAutoPlayFromUI = startAutoPlayFromUI;
 
 // ============================================
 // INIT
@@ -3495,6 +3792,12 @@ let currentConversationSeekerId = null;
 let currentMessageCount = 0;
 let conversationRefreshInterval = null;
 
+// Auto-play conversation state
+let autoPlayActive = false;
+let autoPlayMessages = [];
+let autoPlayIndex = 0;
+let autoPlaySeekerId = null;
+
 async function viewConversation(seekerId) {
   const content = document.getElementById('content');
   content.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading conversation...</div>';
@@ -3544,6 +3847,20 @@ async function renderConversation(seekerId) {
               <span class="stat-pill live-indicator">🔴 LIVE</span>
             </div>
           </div>
+        </div>
+        
+        <!-- Auto-Play Controls -->
+        <div class="autoplay-controls" id="autoplay-controls">
+          <button class="btn-autoplay" id="btn-autoplay" onclick="startAutoPlayFromUI()">
+            ▶️ Play All
+          </button>
+          <button class="btn-stop-autoplay" id="btn-stop-autoplay" onclick="stopAutoPlay()" style="display:none;">
+            ⏹️ Stop
+          </button>
+          <div class="autoplay-progress-container">
+            <div class="autoplay-progress-bar" id="autoplay-progress-bar"></div>
+          </div>
+          <span class="autoplay-progress-text" id="autoplay-progress">0 / ${messages.length}</span>
         </div>
         
         <div class="conv-messages-view" id="messages-container">
@@ -3723,6 +4040,9 @@ async function updateConversationMessages(seekerId) {
 }
 
 function exitConversation() {
+  // Stop auto-play if active
+  stopAutoPlay();
+  
   // Stop conversation refresh
   if (conversationRefreshInterval) {
     clearInterval(conversationRefreshInterval);
