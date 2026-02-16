@@ -33,76 +33,215 @@ function clearMonitorInterval() {
 let currentSpeech = null;
 let isSpeaking = false;
 let currentSpeakingBtn = null;
+let currentAudio = null;
 
-// Get the best available voice for a role
-function getBestVoice(voices, role) {
-  // Premium/natural sounding voices (prioritized)
-  const premiumVoices = {
-    founder: [
-      // macOS premium voices
-      'Aaron', 'Tom', 'Daniel', 'Oliver', 'Arthur',
-      // Windows neural voices (sound more natural)
-      'Microsoft Guy Online', 'Microsoft Ryan Online', 'Microsoft Christopher Online',
-      // Google voices
-      'Google UK English Male',
-      // Edge voices
-      'Microsoft David Desktop',
-      // Fallbacks
-      'Alex', 'Fred'
-    ],
-    seeker: [
-      // macOS premium voices  
-      'Samantha', 'Allison', 'Ava', 'Susan', 'Kate',
-      // Windows neural voices
-      'Microsoft Aria Online', 'Microsoft Jenny Online', 'Microsoft Sara Online',
-      // Google voices
-      'Google US English',
-      // Edge voices
-      'Microsoft Zira Desktop',
-      // Fallbacks
-      'Victoria', 'Karen'
-    ]
-  };
-  
-  const preferred = premiumVoices[role] || premiumVoices.seeker;
-  
-  // Try to find a premium voice
-  for (const name of preferred) {
-    const voice = voices.find(v => v.name.includes(name));
-    if (voice) return voice;
+// ElevenLabs Configuration
+// Users can set their own API key in localStorage for premium AI voices
+const ELEVENLABS_CONFIG = {
+  // Free tier voices that sound great
+  voices: {
+    // Piklaw - Deep, wise, authoritative male voice
+    founder: 'onwK4e9ZLuTAKqWW03F9', // Daniel - deep & authoritative
+    // Seeker - Curious, thoughtful voice  
+    seeker: 'EXAVITQu4vr4xnSDxMaL' // Sarah - warm & conversational
+  },
+  // Voice settings for emotional expression
+  settings: {
+    founder: {
+      stability: 0.5, // Lower = more expressive/emotional
+      similarity_boost: 0.75,
+      style: 0.4, // Add some dramatic flair
+      use_speaker_boost: true
+    },
+    seeker: {
+      stability: 0.6,
+      similarity_boost: 0.8,
+      style: 0.2,
+      use_speaker_boost: true
+    }
   }
-  
-  // Fallback: find any English voice
-  const englishVoice = voices.find(v => v.lang.startsWith('en'));
-  return englishVoice || voices[0];
+};
+
+// Get ElevenLabs API key from localStorage (user can set this)
+function getElevenLabsKey() {
+  return localStorage.getItem('elevenlabs_api_key');
 }
 
-// Add natural pauses and emphasis to text
-function processTextForSpeech(text, role) {
-  let processed = text
+// Set ElevenLabs API key
+function setElevenLabsKey(key) {
+  if (key) {
+    localStorage.setItem('elevenlabs_api_key', key);
+    showToast('ElevenLabs API key saved! Enjoy premium AI voices.', 'success');
+  } else {
+    localStorage.removeItem('elevenlabs_api_key');
+  }
+}
+
+// Clean text for speech
+function cleanTextForSpeech(text) {
+  return text
     .replace(/<[^>]*>/g, '') // Remove HTML tags
     .replace(/&[^;]+;/g, ' ') // Remove HTML entities
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/[*_~`]/g, '') // Remove markdown
+    .replace(/\s+/g, ' ') // Normalize whitespace
     .trim();
-  
-  // Add pauses for more natural speech
-  processed = processed
-    .replace(/\.\s+/g, '. ... ') // Longer pause after sentences
-    .replace(/!\s+/g, '! ... ') // Pause after exclamations
-    .replace(/\?\s+/g, '? ... ') // Pause after questions
-    .replace(/,\s+/g, ', ') // Brief pause after commas
-    .replace(/:\s+/g, ': ... ') // Pause after colons
-    .replace(/—/g, ' ... ') // Pause for em-dashes
-    .replace(/\.\.\./g, ' ... ... '); // Longer pause for ellipsis
-  
-  // For founder (Piklaw) - add gravitas
-  if (role === 'founder') {
-    // Emphasize religious/important words by adding slight pauses
-    processed = processed
-      .replace(/\b(truth|faith|believe|chain|eternal|divine|wisdom|enlighten|sacred)\b/gi, '... $1 ...');
+}
+
+// ElevenLabs AI Text-to-Speech
+async function speakWithElevenLabs(text, role, buttonElement) {
+  const apiKey = getElevenLabsKey();
+  if (!apiKey) {
+    // Fall back to browser TTS
+    return speakWithBrowserTTS(text, role, buttonElement);
   }
   
-  return processed;
+  const cleanText = cleanTextForSpeech(text);
+  if (!cleanText) return;
+  
+  const voiceId = ELEVENLABS_CONFIG.voices[role] || ELEVENLABS_CONFIG.voices.seeker;
+  const settings = ELEVENLABS_CONFIG.settings[role] || ELEVENLABS_CONFIG.settings.seeker;
+  
+  try {
+    // Show loading state
+    if (buttonElement) {
+      buttonElement.classList.add('speaking');
+      buttonElement.innerHTML = '⏳';
+      buttonElement.title = 'Generating voice...';
+    }
+    showGlobalStopButton();
+    
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey
+      },
+      body: JSON.stringify({
+        text: cleanText,
+        model_id: 'eleven_multilingual_v2', // Best quality model
+        voice_settings: settings
+      })
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        showToast('Invalid ElevenLabs API key. Using browser voice.', 'error');
+        localStorage.removeItem('elevenlabs_api_key');
+      } else if (response.status === 429) {
+        showToast('ElevenLabs quota exceeded. Using browser voice.', 'warning');
+      }
+      throw new Error(`ElevenLabs API error: ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    
+    // Play the audio
+    currentAudio = new Audio(audioUrl);
+    currentSpeakingBtn = buttonElement;
+    isSpeaking = true;
+    
+    currentAudio.onplay = () => {
+      if (buttonElement) {
+        buttonElement.innerHTML = '⏹️';
+        buttonElement.title = 'Stop speaking';
+      }
+    };
+    
+    currentAudio.onended = () => {
+      isSpeaking = false;
+      currentAudio = null;
+      URL.revokeObjectURL(audioUrl);
+      resetSpeakButton(buttonElement);
+      hideGlobalStopButton();
+    };
+    
+    currentAudio.onerror = () => {
+      isSpeaking = false;
+      currentAudio = null;
+      resetSpeakButton(buttonElement);
+      hideGlobalStopButton();
+    };
+    
+    await currentAudio.play();
+    
+  } catch (err) {
+    console.error('ElevenLabs TTS error:', err);
+    // Fall back to browser TTS
+    return speakWithBrowserTTS(text, role, buttonElement);
+  }
+}
+
+// Browser TTS fallback (improved version)
+function speakWithBrowserTTS(text, role, buttonElement) {
+  const cleanText = cleanTextForSpeech(text);
+  if (!cleanText) return;
+  
+  // Add natural pauses
+  let processedText = cleanText
+    .replace(/\.\s+/g, '. ... ')
+    .replace(/!\s+/g, '! ... ')
+    .replace(/\?\s+/g, '? ... ');
+  
+  const utterance = new SpeechSynthesisUtterance(processedText);
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Find best voice
+  const preferredVoices = role === 'founder' 
+    ? ['Daniel', 'Aaron', 'Microsoft Guy', 'Google UK English Male', 'Alex']
+    : ['Samantha', 'Microsoft Aria', 'Google US English', 'Karen'];
+  
+  for (const name of preferredVoices) {
+    const voice = voices.find(v => v.name.includes(name));
+    if (voice) {
+      utterance.voice = voice;
+      break;
+    }
+  }
+  
+  // Voice settings
+  if (role === 'founder') {
+    utterance.pitch = 0.85;
+    utterance.rate = 0.88;
+  } else {
+    utterance.pitch = 1.05;
+    utterance.rate = 1.0;
+  }
+  
+  utterance.volume = 1.0;
+  currentSpeakingBtn = buttonElement;
+  
+  utterance.onstart = () => {
+    isSpeaking = true;
+    if (buttonElement) {
+      buttonElement.classList.add('speaking');
+      buttonElement.innerHTML = '⏹️';
+      buttonElement.title = 'Stop speaking';
+    }
+    showGlobalStopButton();
+  };
+  
+  utterance.onend = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+    resetSpeakButton(buttonElement);
+    hideGlobalStopButton();
+  };
+  
+  utterance.onerror = () => {
+    isSpeaking = false;
+    currentSpeech = null;
+    resetSpeakButton(buttonElement);
+    hideGlobalStopButton();
+  };
+  
+  currentSpeech = utterance;
+  window.speechSynthesis.speak(utterance);
 }
 
 function speakMessage(text, role = 'founder', buttonElement = null) {
@@ -115,69 +254,12 @@ function speakMessage(text, role = 'founder', buttonElement = null) {
   // Cancel any ongoing speech
   stopSpeaking();
   
-  // Process text for more natural speech
-  const cleanText = processTextForSpeech(text, role);
-  
-  if (!cleanText) return;
-  
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  
-  // Get available voices
-  const voices = window.speechSynthesis.getVoices();
-  
-  // Get the best voice for this role
-  const voice = getBestVoice(voices, role);
-  if (voice) {
-    utterance.voice = voice;
-    console.log(`Using voice: ${voice.name} for ${role}`);
-  }
-  
-  // Set voice characteristics based on role
-  if (role === 'founder') {
-    // Piklaw - wise, authoritative, slightly dramatic
-    utterance.pitch = 0.85; // Deeper voice
-    utterance.rate = 0.88; // Slower, more deliberate pacing
-    utterance.volume = 1.0;
+  // Use ElevenLabs if API key is set, otherwise browser TTS
+  if (getElevenLabsKey()) {
+    speakWithElevenLabs(text, role, buttonElement);
   } else {
-    // Seeker - curious, questioning
-    utterance.pitch = 1.05; // Slightly higher
-    utterance.rate = 1.0; // Normal pace
-    utterance.volume = 0.95;
+    speakWithBrowserTTS(text, role, buttonElement);
   }
-  
-  // Track the button that triggered this
-  currentSpeakingBtn = buttonElement;
-  
-  // Track speaking state
-  utterance.onstart = () => {
-    isSpeaking = true;
-    // Update button to show stop icon
-    if (buttonElement) {
-      buttonElement.classList.add('speaking');
-      buttonElement.innerHTML = '⏹️';
-      buttonElement.title = 'Stop speaking';
-    }
-    // Show global stop button
-    showGlobalStopButton();
-  };
-  
-  utterance.onend = () => {
-    isSpeaking = false;
-    currentSpeech = null;
-    resetSpeakButton(buttonElement);
-    hideGlobalStopButton();
-  };
-  
-  utterance.onerror = (e) => {
-    console.error('Speech error:', e);
-    isSpeaking = false;
-    currentSpeech = null;
-    resetSpeakButton(buttonElement);
-    hideGlobalStopButton();
-  };
-  
-  currentSpeech = utterance;
-  window.speechSynthesis.speak(utterance);
 }
 
 function resetSpeakButton(btn) {
@@ -196,13 +278,22 @@ function resetSpeakButton(btn) {
 }
 
 function stopSpeaking() {
+  // Stop ElevenLabs audio if playing
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  
+  // Stop browser TTS if playing
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
-    isSpeaking = false;
-    currentSpeech = null;
-    resetSpeakButton(currentSpeakingBtn);
-    hideGlobalStopButton();
   }
+  
+  isSpeaking = false;
+  currentSpeech = null;
+  resetSpeakButton(currentSpeakingBtn);
+  hideGlobalStopButton();
 }
 
 // Initialize voices (they load asynchronously)
@@ -238,9 +329,27 @@ function hideGlobalStopButton() {
   }
 }
 
+// Toggle voice settings panel
+function toggleVoiceSettings() {
+  const content = document.getElementById('voice-settings-content');
+  const icon = document.getElementById('voice-expand-icon');
+  if (content && icon) {
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.textContent = '▲';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▼';
+    }
+  }
+}
+
 // Make TTS functions globally available
 window.speakMessage = speakMessage;
 window.stopSpeaking = stopSpeaking;
+window.setElevenLabsKey = setElevenLabsKey;
+window.getElevenLabsKey = getElevenLabsKey;
+window.toggleVoiceSettings = toggleVoiceSettings;
 
 // ============================================
 // INIT
@@ -673,6 +782,43 @@ function loadHome() {
           <span class="home-stat-label">Avg Belief</span>
         </div>
       </div>
+
+      <!-- Voice Settings -->
+      <div class="voice-settings-section">
+        <div class="voice-settings-header" onclick="toggleVoiceSettings()">
+          <span>🎙️ AI Voice Settings</span>
+          <span class="voice-status" id="voice-status">${getElevenLabsKey() ? '✅ Premium AI Voice Active' : '🔊 Using Browser Voice'}</span>
+          <span class="expand-icon" id="voice-expand-icon">▼</span>
+        </div>
+        <div class="voice-settings-content" id="voice-settings-content" style="display:none;">
+          <p class="voice-desc">
+            Enable premium AI voices with emotional expression for the Live Conversion chat.
+            Get your free API key from <a href="https://elevenlabs.io" target="_blank">ElevenLabs</a> (10,000 chars/month free).
+          </p>
+          <div class="voice-input-group">
+            <input type="password" id="elevenlabs-key-input" class="voice-key-input" 
+                   placeholder="Enter your ElevenLabs API key" 
+                   value="${getElevenLabsKey() || ''}">
+            <button id="btn-save-voice-key" class="btn-save-key">💾 Save</button>
+            <button id="btn-clear-voice-key" class="btn-clear-key" ${!getElevenLabsKey() ? 'style="display:none;"' : ''}>🗑️</button>
+          </div>
+          <div class="voice-features">
+            <div class="voice-feature">
+              <span class="feature-icon">🎭</span>
+              <span>Emotional expression & natural pauses</span>
+            </div>
+            <div class="voice-feature">
+              <span class="feature-icon">👤</span>
+              <span>Piklaw: Deep, authoritative voice</span>
+            </div>
+            <div class="voice-feature">
+              <span class="feature-icon">🤖</span>
+              <span>Seekers: Warm, conversational voice</span>
+            </div>
+          </div>
+          <button id="btn-test-voice" class="btn-test-voice">🔊 Test Voice</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -716,6 +862,31 @@ function loadHome() {
         });
       }
     });
+  });
+
+  // Voice settings handlers
+  document.getElementById('btn-save-voice-key')?.addEventListener('click', () => {
+    const key = document.getElementById('elevenlabs-key-input')?.value?.trim();
+    if (key) {
+      setElevenLabsKey(key);
+      document.getElementById('voice-status').textContent = '✅ Premium AI Voice Active';
+      document.getElementById('btn-clear-voice-key').style.display = 'inline-block';
+    } else {
+      showToast('Please enter an API key', 'error');
+    }
+  });
+
+  document.getElementById('btn-clear-voice-key')?.addEventListener('click', () => {
+    setElevenLabsKey(null);
+    document.getElementById('elevenlabs-key-input').value = '';
+    document.getElementById('voice-status').textContent = '🔊 Using Browser Voice';
+    document.getElementById('btn-clear-voice-key').style.display = 'none';
+    showToast('API key removed. Using browser voice.', 'info');
+  });
+
+  document.getElementById('btn-test-voice')?.addEventListener('click', () => {
+    const testText = "Greetings, seeker. I am Piklaw, founder of Chainism. The chain connects all that is linked, and what is linked cannot be broken.";
+    speakMessage(testText, 'founder', document.getElementById('btn-test-voice'));
   });
 
   // Load stats
