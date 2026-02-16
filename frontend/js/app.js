@@ -32,20 +32,91 @@ function clearMonitorInterval() {
 
 let currentSpeech = null;
 let isSpeaking = false;
+let currentSpeakingBtn = null;
 
-function speakMessage(text, role = 'founder') {
-  // Cancel any ongoing speech
-  if (currentSpeech) {
-    window.speechSynthesis.cancel();
-    isSpeaking = false;
+// Get the best available voice for a role
+function getBestVoice(voices, role) {
+  // Premium/natural sounding voices (prioritized)
+  const premiumVoices = {
+    founder: [
+      // macOS premium voices
+      'Aaron', 'Tom', 'Daniel', 'Oliver', 'Arthur',
+      // Windows neural voices (sound more natural)
+      'Microsoft Guy Online', 'Microsoft Ryan Online', 'Microsoft Christopher Online',
+      // Google voices
+      'Google UK English Male',
+      // Edge voices
+      'Microsoft David Desktop',
+      // Fallbacks
+      'Alex', 'Fred'
+    ],
+    seeker: [
+      // macOS premium voices  
+      'Samantha', 'Allison', 'Ava', 'Susan', 'Kate',
+      // Windows neural voices
+      'Microsoft Aria Online', 'Microsoft Jenny Online', 'Microsoft Sara Online',
+      // Google voices
+      'Google US English',
+      // Edge voices
+      'Microsoft Zira Desktop',
+      // Fallbacks
+      'Victoria', 'Karen'
+    ]
+  };
+  
+  const preferred = premiumVoices[role] || premiumVoices.seeker;
+  
+  // Try to find a premium voice
+  for (const name of preferred) {
+    const voice = voices.find(v => v.name.includes(name));
+    if (voice) return voice;
   }
   
-  // Clean the text - remove HTML tags and special characters
-  const cleanText = text
+  // Fallback: find any English voice
+  const englishVoice = voices.find(v => v.lang.startsWith('en'));
+  return englishVoice || voices[0];
+}
+
+// Add natural pauses and emphasis to text
+function processTextForSpeech(text, role) {
+  let processed = text
     .replace(/<[^>]*>/g, '') // Remove HTML tags
     .replace(/&[^;]+;/g, ' ') // Remove HTML entities
     .replace(/[*_~`]/g, '') // Remove markdown
     .trim();
+  
+  // Add pauses for more natural speech
+  processed = processed
+    .replace(/\.\s+/g, '. ... ') // Longer pause after sentences
+    .replace(/!\s+/g, '! ... ') // Pause after exclamations
+    .replace(/\?\s+/g, '? ... ') // Pause after questions
+    .replace(/,\s+/g, ', ') // Brief pause after commas
+    .replace(/:\s+/g, ': ... ') // Pause after colons
+    .replace(/—/g, ' ... ') // Pause for em-dashes
+    .replace(/\.\.\./g, ' ... ... '); // Longer pause for ellipsis
+  
+  // For founder (Piklaw) - add gravitas
+  if (role === 'founder') {
+    // Emphasize religious/important words by adding slight pauses
+    processed = processed
+      .replace(/\b(truth|faith|believe|chain|eternal|divine|wisdom|enlighten|sacred)\b/gi, '... $1 ...');
+  }
+  
+  return processed;
+}
+
+function speakMessage(text, role = 'founder', buttonElement = null) {
+  // If already speaking the same text, stop it (toggle behavior)
+  if (isSpeaking && currentSpeakingBtn === buttonElement) {
+    stopSpeaking();
+    return;
+  }
+  
+  // Cancel any ongoing speech
+  stopSpeaking();
+  
+  // Process text for more natural speech
+  const cleanText = processTextForSpeech(text, role);
   
   if (!cleanText) return;
   
@@ -54,58 +125,74 @@ function speakMessage(text, role = 'founder') {
   // Get available voices
   const voices = window.speechSynthesis.getVoices();
   
-  // Set voice based on role
-  if (role === 'founder') {
-    // For founder (Piklaw) - deeper, more authoritative voice
-    const preferredVoices = voices.filter(v => 
-      v.name.includes('Daniel') || 
-      v.name.includes('David') || 
-      v.name.includes('Google UK English Male') ||
-      v.name.includes('Microsoft David') ||
-      v.name.includes('Alex')
-    );
-    if (preferredVoices.length > 0) {
-      utterance.voice = preferredVoices[0];
-    }
-    utterance.pitch = 0.9; // Slightly lower pitch
-    utterance.rate = 0.95; // Slightly slower, more deliberate
-  } else {
-    // For seeker - normal voice
-    const preferredVoices = voices.filter(v => 
-      v.name.includes('Samantha') || 
-      v.name.includes('Google US English') ||
-      v.name.includes('Microsoft Zira') ||
-      v.name.includes('Karen')
-    );
-    if (preferredVoices.length > 0) {
-      utterance.voice = preferredVoices[0];
-    }
-    utterance.pitch = 1.0;
-    utterance.rate = 1.0;
+  // Get the best voice for this role
+  const voice = getBestVoice(voices, role);
+  if (voice) {
+    utterance.voice = voice;
+    console.log(`Using voice: ${voice.name} for ${role}`);
   }
   
-  utterance.volume = 1.0;
+  // Set voice characteristics based on role
+  if (role === 'founder') {
+    // Piklaw - wise, authoritative, slightly dramatic
+    utterance.pitch = 0.85; // Deeper voice
+    utterance.rate = 0.88; // Slower, more deliberate pacing
+    utterance.volume = 1.0;
+  } else {
+    // Seeker - curious, questioning
+    utterance.pitch = 1.05; // Slightly higher
+    utterance.rate = 1.0; // Normal pace
+    utterance.volume = 0.95;
+  }
+  
+  // Track the button that triggered this
+  currentSpeakingBtn = buttonElement;
   
   // Track speaking state
   utterance.onstart = () => {
     isSpeaking = true;
-    // Highlight the speaking button
-    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+    // Update button to show stop icon
+    if (buttonElement) {
+      buttonElement.classList.add('speaking');
+      buttonElement.innerHTML = '⏹️';
+      buttonElement.title = 'Stop speaking';
+    }
+    // Show global stop button
+    showGlobalStopButton();
   };
   
   utterance.onend = () => {
     isSpeaking = false;
     currentSpeech = null;
-    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+    resetSpeakButton(buttonElement);
+    hideGlobalStopButton();
   };
   
-  utterance.onerror = () => {
+  utterance.onerror = (e) => {
+    console.error('Speech error:', e);
     isSpeaking = false;
     currentSpeech = null;
+    resetSpeakButton(buttonElement);
+    hideGlobalStopButton();
   };
   
   currentSpeech = utterance;
   window.speechSynthesis.speak(utterance);
+}
+
+function resetSpeakButton(btn) {
+  if (btn) {
+    btn.classList.remove('speaking');
+    btn.innerHTML = '🔊';
+    btn.title = 'Listen to message';
+  }
+  currentSpeakingBtn = null;
+  // Reset all speaking buttons
+  document.querySelectorAll('.speak-btn.speaking').forEach(b => {
+    b.classList.remove('speaking');
+    b.innerHTML = '🔊';
+    b.title = 'Listen to message';
+  });
 }
 
 function stopSpeaking() {
@@ -113,7 +200,8 @@ function stopSpeaking() {
     window.speechSynthesis.cancel();
     isSpeaking = false;
     currentSpeech = null;
-    document.querySelectorAll('.speak-btn.speaking').forEach(btn => btn.classList.remove('speaking'));
+    resetSpeakButton(currentSpeakingBtn);
+    hideGlobalStopButton();
   }
 }
 
@@ -122,6 +210,32 @@ if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
     console.log('Speech voices loaded:', window.speechSynthesis.getVoices().length);
   };
+}
+
+// Show floating stop button when speaking
+function showGlobalStopButton() {
+  let stopBtn = document.getElementById('global-stop-speech');
+  if (!stopBtn) {
+    stopBtn = document.createElement('button');
+    stopBtn.id = 'global-stop-speech';
+    stopBtn.className = 'global-stop-btn';
+    stopBtn.innerHTML = '⏹️ Stop Speaking';
+    stopBtn.onclick = stopSpeaking;
+    document.body.appendChild(stopBtn);
+  }
+  stopBtn.style.display = 'flex';
+  // Animate in
+  setTimeout(() => stopBtn.classList.add('visible'), 10);
+}
+
+function hideGlobalStopButton() {
+  const stopBtn = document.getElementById('global-stop-speech');
+  if (stopBtn) {
+    stopBtn.classList.remove('visible');
+    setTimeout(() => {
+      stopBtn.style.display = 'none';
+    }, 300);
+  }
 }
 
 // Make TTS functions globally available
@@ -2956,7 +3070,7 @@ function renderChatMessages() {
       <div class="message-content">
         <div class="message-text-wrapper">
           <div class="message-text">${formatContent(msg.content)}</div>
-          <button class="speak-btn" onclick="this.classList.toggle('speaking'); speakMessage('${escapedContent}', '${msg.role}')" title="Listen to message">
+          <button class="speak-btn" onclick="speakMessage('${escapedContent}', '${msg.role}', this)" title="Listen to message">
             🔊
           </button>
         </div>
@@ -3336,7 +3450,7 @@ function renderMessages(messages, seekerId) {
             <span class="msg-role">${isFounder ? founderName : escapeHtml(seekerId)}</span>
             <span class="msg-number">#${msgNumber}</span>
             ${timestamp ? `<span class="msg-time">${timestamp}</span>` : ''}
-            <button class="speak-btn" onclick="this.classList.toggle('speaking'); speakMessage('${escapedContent}', '${isFounder ? 'founder' : 'seeker'}')" title="Listen to message">
+            <button class="speak-btn" onclick="speakMessage('${escapedContent}', '${isFounder ? 'founder' : 'seeker'}', this)" title="Listen to message">
               🔊
             </button>
           </div>

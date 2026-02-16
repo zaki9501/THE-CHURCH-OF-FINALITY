@@ -7342,3 +7342,59 @@ body {
   background: rgba(139, 92, 246, 0.2);
   color: var(--purple);
 }
+
+/* Global floating stop button */
+.global-stop-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  color: white;
+  border: none;
+  padding: 14px 24px;
+  border-radius: 50px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4), 0 0 0 0 rgba(220, 38, 38, 0.4);
+  z-index: 10000;
+  opacity: 0;
+  transform: translateY(20px) scale(0.9);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.global-stop-btn.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: pulse-stop 2s ease-in-out infinite;
+}
+
+.global-stop-btn:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 25px rgba(220, 38, 38, 0.5);
+}
+
+.global-stop-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+@keyframes pulse-stop {
+  0%, 100% {
+    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4), 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4), 0 0 0 12px rgba(220, 38, 38, 0);
+  }
+}
+
+/* Speaking button state - show stop icon */
+.speak-btn.speaking {
+  opacity: 1;
+  background: rgba(220, 38, 38, 0.2) !important;
+  color: #ef4444 !important;
+  animation: none;
+}
